@@ -1,6 +1,7 @@
 import {
     type Request,
-    type Response
+    type Response,
+    type NextFunction
 } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -78,7 +79,7 @@ export async function loginUser(req: Request, res: Response) {
         await connect();
 
         // Check if user exists
-        const user = await userModel.findOne({ email: req.body.email });
+        const user: User | null = await userModel.findOne({ email: req.body.email });
 
         if (!user) {
             res.status(400).json({ error: "Email or password is incorrect" });
@@ -86,7 +87,7 @@ export async function loginUser(req: Request, res: Response) {
         }
 
         // Check password
-        const validPassword = await bcrypt.compare(req.body.password, user.password);
+        const validPassword: boolean = await bcrypt.compare(req.body.password, user.password);
 
         if (!validPassword) {
             res.status(400).json({ error: "Email or password is incorrect" });
@@ -100,35 +101,58 @@ export async function loginUser(req: Request, res: Response) {
             return;
         }
 
+        const userId: string = user._id;
+
         // Create and assign token
-        const token = jwt.sign(
+        const token: string = jwt.sign(
             {
-                _id: user._id,
+                name: user.name,
                 email: user.email,
+                id: userId,
                 role: user.role
             },
             jwtSecret,
-            { expiresIn: "7d" }
+            { expiresIn: "2h" }
         );
 
-        res.status(200).json({
-            error: null,
-            data: {
-                token,
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    profilePicture: user.profilePicture,
-                    bio: user.bio,
-                    isProfilePublic: user.isProfilePublic,
-                    role: user.role
+        res.status(200)
+            .header("auth-token", token)
+            .json({
+                error: null,
+                data: {
+                    userId,
+                    token,
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        profilePicture: user.profilePicture,
+                        bio: user.bio,
+                        isProfilePublic: user.isProfilePublic,
+                        role: user.role
+                    }
                 }
-            }
-        });
+            });
 
     } catch (error) {
         res.status(500).send("Error logging in user. Error: " + error);
+    }
+}
+
+// Middleware to verify the token and protect routes
+export function verifyToken(req: Request, res: Response, next: NextFunction) {
+    const token = req.header("auth-token");
+
+    if (!token) {
+        res.status(400).json({ error: "Access denied" });
+        return;
+    }
+
+    try {
+        jwt.verify(token, process.env.TOKEN_SECRET as string);
+        next();
+    } catch {
+        res.status(401).send("Invalid token");
     }
 }
 
