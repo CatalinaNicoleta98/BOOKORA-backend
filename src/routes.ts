@@ -7,7 +7,7 @@ const router: Router = Router();
 
 router.get('/', (req: Request, res: Response) => {
 
-    res.status(200).send('Welcome to SAVORA');
+    res.status(200).send('Welcome to BOOKORA');
 });
 
 export default router;
