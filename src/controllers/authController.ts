@@ -7,6 +7,17 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import Joi, { ValidationResult } from "joi";
 
+declare global {
+    namespace Express {
+        interface Request {
+            userId?: string;
+            userEmail?: string;
+            userName?: string;
+            userRole?: string;
+        }
+    }
+}
+
 // Project imports
 import { userModel } from "../models/userModel";
 import { User } from "../interfaces/user";
@@ -144,15 +155,28 @@ export function verifyToken(req: Request, res: Response, next: NextFunction) {
     const token = req.header("auth-token");
 
     if (!token) {
-        res.status(400).json({ error: "Access denied" });
+        res.status(401).json({ error: "Access denied, no token provided" });
         return;
     }
 
     try {
-        jwt.verify(token, process.env.TOKEN_SECRET as string);
+        const decoded = jwt.verify(token, process.env.TOKEN_SECRET as string) as {
+            id: string;
+            email?: string;
+            name?: string;
+            role?: string;
+            iat?: number;
+            exp?: number;
+        };
+
+        req.userId = decoded.id;
+        req.userEmail = decoded.email;
+        req.userName = decoded.name;
+        req.userRole = decoded.role;
+
         next();
     } catch {
-        res.status(401).send("Invalid token");
+        res.status(401).json({ error: "Invalid token" });
     }
 }
 
