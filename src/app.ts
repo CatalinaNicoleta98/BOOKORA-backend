@@ -2,7 +2,6 @@ import express, {Application, Request, Response} from 'express';
 import dotenvFlow from 'dotenv-flow';
 import routes from './routes';
 import { testConnection } from './config/db';
-import test from 'node:test';
 import cors from 'cors';
 
 
@@ -15,9 +14,9 @@ const app: Application = express();
 
 function setupCors() {
     app.use(cors({
-        origin: 'http://localhost:5173',
+        origin: ['http://localhost:5173', 'http://localhost:5174'],
         methods: ['GET', 'POST', 'PUT', 'DELETE'],
-        allowedHeaders: ['auth-token', 'Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
+        allowedHeaders: ['Authorization', 'auth-token', 'Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
         credentials: true
     }));
 }
