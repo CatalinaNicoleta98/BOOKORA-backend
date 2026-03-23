@@ -138,6 +138,44 @@ export async function loginUser(req: Request, res: Response) {
     }
 }
 
+// Get current authenticated user
+export async function getCurrentUser(req: Request, res: Response) {
+    try {
+        await connect();
+
+        const userId = (req as any).userId;
+
+        if (!userId) {
+            res.status(401).json({ error: "Unauthorized" });
+            return;
+        }
+
+        const user = await userModel.findById(userId);
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        res.status(200).json({
+            error: null,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    profilePicture: user.profilePicture,
+                    bio: user.bio,
+                    isProfilePublic: user.isProfilePublic,
+                    role: user.role
+                }
+            }
+        });
+    } catch (error) {
+        res.status(500).send("Error fetching current user. Error: " + error);
+    }
+}
+
 
 // Validate user registration data
 export function validateUserRegistration(data: User): ValidationResult {
