@@ -1,22 +1,10 @@
 import {
     type Request,
     type Response,
-    type NextFunction
 } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import Joi, { ValidationResult } from "joi";
-
-declare global {
-    namespace Express {
-        interface Request {
-            userId?: string;
-            userEmail?: string;
-            userName?: string;
-            userRole?: string;
-        }
-    }
-}
 
 // Project imports
 import { userModel } from "../models/userModel";
@@ -117,9 +105,9 @@ export async function loginUser(req: Request, res: Response) {
         // Create and assign token
         const token: string = jwt.sign(
             {
+                userId,
                 name: user.name,
                 email: user.email,
-                id: userId,
                 role: user.role
             },
             jwtSecret,
@@ -147,36 +135,6 @@ export async function loginUser(req: Request, res: Response) {
 
     } catch (error) {
         res.status(500).send("Error logging in user. Error: " + error);
-    }
-}
-
-// Middleware to verify the token and protect routes
-export function verifyToken(req: Request, res: Response, next: NextFunction) {
-    const token = req.header("auth-token");
-
-    if (!token) {
-        res.status(401).json({ error: "Access denied, no token provided" });
-        return;
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.TOKEN_SECRET as string) as {
-            id: string;
-            email?: string;
-            name?: string;
-            role?: string;
-            iat?: number;
-            exp?: number;
-        };
-
-        req.userId = decoded.id;
-        req.userEmail = decoded.email;
-        req.userName = decoded.name;
-        req.userRole = decoded.role;
-
-        next();
-    } catch {
-        res.status(401).json({ error: "Invalid token" });
     }
 }
 
