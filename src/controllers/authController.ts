@@ -21,7 +21,7 @@ declare global {
 // Project imports
 import { userModel } from "../models/userModel";
 import { User } from "../interfaces/user";
-import { connect } from "../repository/db";
+import { connect } from "../config/db";
 
 
 // Register a new user

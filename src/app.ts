@@ -1,7 +1,7 @@
 import express, {Application, Request, Response} from 'express';
 import dotenvFlow from 'dotenv-flow';
 import routes from './routes';
-import { testConnection } from './repository/db';
+import { testConnection } from './config/db';
 import test from 'node:test';
 import cors from 'cors';
 
