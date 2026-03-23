@@ -1,18 +1,14 @@
-import {Router, Request, Response} from 'express';
-import { loginUser, registerUser } from './controllers/authController';
+import { Router, Request, Response } from 'express';
+import authRoutes from './routes/authRoutes';
 
 const router: Router = Router();
 
-//get, post, put, delete (CRUD)
-
-
+// Root route
 router.get('/', (req: Request, res: Response) => {
-
     res.status(200).send('Welcome to BOOKORA');
 });
 
+// Mount auth routes
+router.use('/auth', authRoutes);
 
-//Authentication routes
-router.post('/auth/register', registerUser);
-router.post('/auth/login', loginUser);
 export default router;
