@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import authRoutes from './routes/authRoutes';
-import { verifyToken } from './middleware/authMiddleware';
+import libraryEntryRoutes from './routes/libraryEntryRoutes';
 
 const router: Router = Router();
 
@@ -9,11 +9,8 @@ router.get('/', (req: Request, res: Response) => {
     res.status(200).send('Welcome to BOOKORA');
 });
 
-router.get('/protected', verifyToken, (req: Request, res: Response) => {
-    res.status(200).json({ message: 'Access granted to protected route.' });
-});
-
 // Mount auth routes
 router.use('/auth', authRoutes);
+router.use('/library', libraryEntryRoutes);
 
 export default router;
