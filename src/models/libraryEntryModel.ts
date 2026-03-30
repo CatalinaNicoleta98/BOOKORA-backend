@@ -26,6 +26,11 @@ export interface LibraryEntryDocument extends Document {
   rating?: number;
   notes?: string;
 
+  // Progress tracking
+  progressValue?: number; // current page, %, minutes, or hours
+  progressMax?: number;   // total pages, 100, total minutes/hours
+  progressUnit?: "pages" | "percent" | "minutes" | "hours";
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -117,6 +122,22 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
     notes: {
       type: String,
       trim: true
+    },
+
+    // Progress tracking
+    progressValue: {
+      type: Number,
+      min: 0
+    },
+
+    progressMax: {
+      type: Number,
+      min: 0
+    },
+
+    progressUnit: {
+      type: String,
+      enum: ["pages", "percent", "minutes", "hours"]
     }
   },
   {

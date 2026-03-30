@@ -23,7 +23,11 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       status,
       format,
       rating,
-      notes
+      notes,
+      // progress
+      progressValue,
+      progressMax,
+      progressUnit
     } = req.body;
 
     // basic source validation
@@ -39,6 +43,22 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
         .json({ message: "customBook title is required for custom books" });
     }
 
+    // progress validation (optional fields)
+    if (progressValue != null && progressValue < 0) {
+      return res.status(400).json({ message: "progressValue must be >= 0" });
+    }
+
+    if (progressMax != null && progressMax < 0) {
+      return res.status(400).json({ message: "progressMax must be >= 0" });
+    }
+
+    if (
+      progressUnit != null &&
+      !["pages", "percent", "minutes", "hours"].includes(progressUnit)
+    ) {
+      return res.status(400).json({ message: "Invalid progressUnit" });
+    }
+
     const entry = await LibraryEntryModel.create({
       userId: new mongoose.Types.ObjectId(userId),
       bookSource,
@@ -51,7 +71,10 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       status,
       format,
       rating,
-      notes
+      notes,
+      progressValue,
+      progressMax,
+      progressUnit
     });
 
     res.status(201).json(entry);
@@ -71,7 +94,7 @@ export const getMyLibrary = async (req: AuthenticatedRequest, res: Response) => 
 
     const entries = await LibraryEntryModel.find({ userId }).sort({ createdAt: -1 });
 
-    res.status(200).json(entries);
+    res.status(200).json({ data: entries });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch library", error });
   }
@@ -87,9 +110,28 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const {
+      status,
+      format,
+      rating,
+      notes,
+      progressValue,
+      progressMax,
+      progressUnit
+    } = req.body;
+
+    const update: Record<string, unknown> = {};
+    if (status !== undefined) update.status = status;
+    if (format !== undefined) update.format = format;
+    if (rating !== undefined) update.rating = rating;
+    if (notes !== undefined) update.notes = notes;
+    if (progressValue !== undefined) update.progressValue = progressValue;
+    if (progressMax !== undefined) update.progressMax = progressMax;
+    if (progressUnit !== undefined) update.progressUnit = progressUnit;
+
     const entry = await LibraryEntryModel.findOneAndUpdate(
       { _id: id, userId },
-      req.body,
+      update,
       { new: true }
     );
 

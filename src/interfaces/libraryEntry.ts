@@ -43,6 +43,11 @@ export interface LibraryEntry {
 
   notes?: string;
 
+  // Progress tracking
+  progressValue?: number; // current page, %, or minutes
+  progressMax?: number;   // total pages, 100%, or total minutes
+  progressUnit?: "pages" | "percent" | "minutes" | "hours";
+
   createdAt: Date;
   updatedAt?: Date;
 }
