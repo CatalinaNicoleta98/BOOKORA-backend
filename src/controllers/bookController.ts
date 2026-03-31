@@ -1,5 +1,3 @@
-
-
 import { Request, Response } from "express";
 import { searchOpenLibraryBooks } from "../services/openLibraryService";
 
@@ -20,7 +18,18 @@ export const searchBooks = async (req: Request, res: Response) => {
       data: result
     });
   } catch (error) {
-    res.status(500).json({
+    if (error instanceof Error) {
+      if (error.message.includes("required")) {
+        return res.status(400).json({
+          error: "INVALID_SEARCH_QUERY",
+          message: error.message
+        });
+      }
+    }
+
+    console.error("Book search controller error", error);
+
+    return res.status(500).json({
       error: "BOOK_SEARCH_FAILED",
       message: "Failed to search books"
     });
