@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
-const OPEN_LIBRARY_TIMEOUT_MS = 8000;
+const OPEN_LIBRARY_TIMEOUT_MS = 3000;
 const OPEN_LIBRARY_SEARCH_FIELDS = [
   "key",
   "title",
