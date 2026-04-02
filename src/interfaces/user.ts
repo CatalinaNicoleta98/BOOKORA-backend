@@ -7,7 +7,9 @@ export interface User {
   password: string;
 
   // Optional profile fields
+  avatarUrl?: string;
   profilePicture?: string;
+  coverImageUrl?: string;
   bio?: string;
 
   // Public profile settings

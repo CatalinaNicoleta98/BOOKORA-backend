@@ -24,8 +24,22 @@ const userSchema = new Schema<User>({
     max: 1024
   },
 
+  // Preferred avatar field used across the app
+  avatarUrl: {
+    type: String,
+    trim: true
+  },
+
+  // Backward compatibility (can be removed later)
   profilePicture: {
-    type: String
+    type: String,
+    trim: true
+  },
+
+  // Profile cover/banner image
+  coverImageUrl: {
+    type: String,
+    trim: true
   },
 
   bio: {
@@ -41,17 +55,9 @@ const userSchema = new Schema<User>({
   role: {
     type: String,
     default: "user"
-  },
-
-  createdAt: {
-    type: Date,
-    required: true,
-    default: Date.now
-  },
-
-  updatedAt: {
-    type: Date
   }
+}, {
+  timestamps: true
 });
 
 export const userModel = model<User>("User", userSchema);

@@ -176,6 +176,76 @@ export async function getCurrentUser(req: Request, res: Response) {
     }
 }
 
+// Update current authenticated user profile
+export async function updateUserProfile(req: Request, res: Response) {
+    try {
+        await connect();
+
+        const userId = (req as any).userId;
+
+        if (!userId) {
+            res.status(401).json({ error: "Unauthorized" });
+            return;
+        }
+
+        const {
+            avatarUrl,
+            coverImageUrl,
+            bio,
+            name
+        } = req.body;
+
+        const updatePayload: Partial<User> = {};
+
+        if (typeof avatarUrl === "string") {
+            updatePayload.avatarUrl = avatarUrl.trim();
+        }
+
+        if (typeof coverImageUrl === "string") {
+            updatePayload.coverImageUrl = coverImageUrl.trim();
+        }
+
+        if (typeof bio === "string") {
+            updatePayload.bio = bio.trim();
+        }
+
+        if (typeof name === "string" && name.trim().length >= 2) {
+            updatePayload.name = name.trim();
+        }
+
+        const updatedUser = await userModel.findByIdAndUpdate(
+            userId,
+            { $set: updatePayload },
+            { new: true }
+        );
+
+        if (!updatedUser) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        res.status(200).json({
+            error: null,
+            data: {
+                user: {
+                    id: updatedUser._id,
+                    name: updatedUser.name,
+                    email: updatedUser.email,
+                    avatarUrl: updatedUser.avatarUrl,
+                    coverImageUrl: updatedUser.coverImageUrl,
+                    profilePicture: updatedUser.profilePicture,
+                    bio: updatedUser.bio,
+                    isProfilePublic: updatedUser.isProfilePublic,
+                    role: updatedUser.role
+                }
+            }
+        });
+
+    } catch (error) {
+        res.status(500).send("Error updating user profile. Error: " + error);
+    }
+}
+
 
 // Validate user registration data
 export function validateUserRegistration(data: User): ValidationResult {
