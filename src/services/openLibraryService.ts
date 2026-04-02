@@ -1,6 +1,15 @@
 import axios from "axios";
 
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
+const OPEN_LIBRARY_TIMEOUT_MS = 8000;
+const OPEN_LIBRARY_SEARCH_FIELDS = [
+  "key",
+  "title",
+  "author_name",
+  "cover_i",
+  "first_publish_year",
+  "isbn",
+].join(",");
 const DEFAULT_SEARCH_PAGE = 1;
 const DEFAULT_SEARCH_LIMIT = 12;
 const MIN_SEARCH_PAGE = 1;
@@ -22,7 +31,7 @@ export interface BookSearchResult {
   author?: string;
   cover?: string;
   publishedYear?: number;
-  isbn?: string[];
+  isbn?: string;
 }
 
 export interface BookSearchResponse {
@@ -46,6 +55,7 @@ interface OpenLibrarySearchDoc {
 interface OpenLibraryApiResponse {
   docs?: OpenLibrarySearchDoc[];
   numFound?: number;
+  num_found?: number;
 }
 
 const normalizeSearchValue = (value?: string) => value?.trim() || undefined;
@@ -63,6 +73,26 @@ const clampNumber = (value: number, minimum: number, maximum?: number) => {
 };
 
 const getNormalizedWorkId = (key: string) => key.split("/").filter(Boolean).pop() || key;
+
+const getPrimaryIsbn = (isbns?: string[]) => {
+  if (!Array.isArray(isbns) || isbns.length === 0) {
+    return undefined;
+  }
+
+  return isbns.find((isbn) => typeof isbn === "string" && isbn.trim().length > 0)?.trim();
+};
+
+const getOpenLibraryNumFound = (data: OpenLibraryApiResponse) => {
+  if (typeof data.numFound === "number") {
+    return data.numFound;
+  }
+
+  if (typeof data.num_found === "number") {
+    return data.num_found;
+  }
+
+  return 0;
+};
 
 export const searchOpenLibraryBooks = async (
   params: OpenLibrarySearchParams
@@ -84,28 +114,45 @@ export const searchOpenLibraryBooks = async (
     throw new Error("At least one search parameter is required.");
   }
 
+  const queryParts: string[] = [];
+
+  if (normalizedQuery) {
+    queryParts.push(normalizedQuery);
+  }
+
+  if (normalizedAuthor) {
+    queryParts.push(`author:${normalizedAuthor}`);
+  }
+
+  if (normalizedIsbn) {
+    queryParts.push(`isbn:${normalizedIsbn}`);
+  }
+
+  const finalQuery = queryParts.join(" ");
+
+  // Guard: avoid spamming Open Library with very short queries
+  if (finalQuery.length < 3) {
+    return {
+      results: [],
+      pagination: {
+        page: normalizedPage,
+        limit: normalizedLimit,
+        numFound: 0,
+      },
+    };
+  }
+
   try {
-    const queryParts: string[] = [];
-
-    if (normalizedQuery) {
-      queryParts.push(normalizedQuery);
-    }
-
-    if (normalizedAuthor) {
-      queryParts.push(`author:${normalizedAuthor}`);
-    }
-
-    if (normalizedIsbn) {
-      queryParts.push(`isbn:${normalizedIsbn}`);
-    }
-
-    const finalQuery = queryParts.join(" ");
-
     const response = await axios.get<OpenLibraryApiResponse>(OPEN_LIBRARY_SEARCH_URL, {
-      timeout: 8000,
+      timeout: OPEN_LIBRARY_TIMEOUT_MS,
       params: {
         q: finalQuery,
         page: normalizedPage,
+        limit: normalizedLimit,
+        fields: OPEN_LIBRARY_SEARCH_FIELDS,
+      },
+      headers: {
+        Accept: "application/json",
       },
     });
 
@@ -118,7 +165,7 @@ export const searchOpenLibraryBooks = async (
       author: doc.author_name?.[0],
       cover: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : undefined,
       publishedYear: doc.first_publish_year,
-      isbn: doc.isbn,
+      isbn: getPrimaryIsbn(doc.isbn),
     }));
 
     return {
@@ -126,17 +173,24 @@ export const searchOpenLibraryBooks = async (
       pagination: {
         page: normalizedPage,
         limit: normalizedLimit,
-        numFound: data.numFound || 0,
+        numFound: getOpenLibraryNumFound(data),
       },
     };
   } catch (error: any) {
+    const upstreamMessage = typeof error?.response?.data === "string"
+      ? error.response.data
+      : error?.response?.data?.message;
+
     console.error("Open Library search failed", {
       message: error?.message,
       status: error?.response?.status,
       data: error?.response?.data,
+      query: finalQuery,
+      page: normalizedPage,
+      limit: normalizedLimit,
+      upstreamMessage,
     });
 
-    // If timeout or network issue, return empty results instead of breaking UX
     return {
       results: [],
       pagination: {
