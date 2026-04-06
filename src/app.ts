@@ -1,8 +1,10 @@
-import express, {Application, Request, Response} from 'express';
+import express, { Application } from 'express';
 import dotenvFlow from 'dotenv-flow';
 import routes from './routes';
 import { testConnection } from './config/db';
 import cors from 'cors';
+
+import path from 'path';
 
 
 dotenvFlow.config();
@@ -15,7 +17,7 @@ const app: Application = express();
 function setupCors() {
     app.use(cors({
         origin: ['http://localhost:5173', 'http://localhost:5174'],
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
         allowedHeaders: ['Authorization', 'auth-token', 'Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
         credentials: true
     }));
@@ -23,6 +25,7 @@ function setupCors() {
 
 //JSON body parser middlerware
 app.use(express.json());
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Setup CORS middleware before routes
 setupCors();

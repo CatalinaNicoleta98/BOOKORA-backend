@@ -1,8 +1,7 @@
-
-
 import { Request, Response } from "express";
 import { userModel } from "../models/userModel";
 import { connect } from "../config/db";
+import path from "path";
 
 // Get current authenticated user
 export async function getCurrentUser(req: Request, res: Response) {
@@ -50,6 +49,11 @@ export async function updateUserProfile(req: Request, res: Response) {
 
         const userId = (req as any).userId;
 
+        const files = (req as any).files as {
+          avatar?: Express.Multer.File[];
+          cover?: Express.Multer.File[];
+        } | undefined;
+
         if (!userId) {
             res.status(401).json({ error: "Unauthorized" });
             return;
@@ -59,11 +63,18 @@ export async function updateUserProfile(req: Request, res: Response) {
 
         const updatePayload: any = {};
 
-        if (typeof avatarUrl === "string") {
+        // Handle uploaded files (preferred over raw URLs)
+        if (files?.avatar?.[0]) {
+            const fileName = files.avatar[0].filename;
+            updatePayload.avatarUrl = path.join("/uploads/profiles", fileName).replace(/\\/g, "/");
+        } else if (typeof avatarUrl === "string") {
             updatePayload.avatarUrl = avatarUrl.trim();
         }
 
-        if (typeof coverImageUrl === "string") {
+        if (files?.cover?.[0]) {
+            const fileName = files.cover[0].filename;
+            updatePayload.coverImageUrl = path.join("/uploads/profiles", fileName).replace(/\\/g, "/");
+        } else if (typeof coverImageUrl === "string") {
             updatePayload.coverImageUrl = coverImageUrl.trim();
         }
 
