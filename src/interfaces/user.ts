@@ -8,7 +8,6 @@ export interface User {
 
   // Optional profile fields
   avatarUrl?: string;
-  profilePicture?: string;
   coverImageUrl?: string;
   bio?: string;
 

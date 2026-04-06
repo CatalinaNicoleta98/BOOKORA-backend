@@ -30,11 +30,6 @@ const userSchema = new Schema<User>({
     trim: true
   },
 
-  // Backward compatibility (can be removed later)
-  profilePicture: {
-    type: String,
-    trim: true
-  },
 
   // Profile cover/banner image
   coverImageUrl: {
