@@ -221,6 +221,27 @@ const getFirstSeriesName = (series?: string[] | string) => {
   return undefined;
 };
 
+const getSeriesNameFromSubjects = (subjects?: string[]) => {
+  if (!Array.isArray(subjects)) {
+    return undefined;
+  }
+
+  const rawSeriesSubject = subjects.find(
+    (subject) => typeof subject === "string" && subject.toLowerCase().startsWith("series:")
+  );
+
+  if (!rawSeriesSubject) {
+    return undefined;
+  }
+
+  const normalizedSeriesName = rawSeriesSubject
+    .slice("series:".length)
+    .replace(/_/g, " ")
+    .trim();
+
+  return normalizedSeriesName.length > 0 ? normalizedSeriesName : undefined;
+};
+
 const getSeriesKeyFromName = (seriesName: string) =>
   seriesName
     .toLowerCase()
@@ -341,7 +362,7 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         key: author.key ? getNormalizedWorkId(author.key) : undefined,
       }));
 
-    const seriesName = getFirstSeriesName(work.series);
+    const seriesName = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
     const series = seriesName
       ? {
           key: getSeriesKeyFromName(seriesName),
