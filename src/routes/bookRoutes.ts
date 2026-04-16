@@ -3,7 +3,7 @@ import { getBookById, searchBooks } from "../controllers/bookController";
 
 const router = Router();
 
-router.get("/:id", getBookById);
 router.get("/search", searchBooks);
+router.get("/:id", getBookById);
 
 export default router;
