@@ -1,8 +1,45 @@
 import { Request, Response } from "express";
-import { searchOpenLibraryBooks } from "../services/openLibraryService";
+import { getOpenLibraryBookById, searchOpenLibraryBooks } from "../services/openLibraryService";
 import LibraryEntryModel from "../models/libraryEntryModel";
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export const getBookById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const rawId = Array.isArray(id) ? id[0] : id;
+    const normalizedBookId = rawId?.trim();
+
+    if (!normalizedBookId) {
+      return res.status(400).json({
+        error: "INVALID_BOOK_ID",
+        message: "Book id is required"
+      });
+    }
+
+    const book = await getOpenLibraryBookById(normalizedBookId);
+
+    return res.status(200).json({
+      error: null,
+      data: book
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({
+        error: "BOOK_DETAILS_FAILED",
+        message: error.message
+      });
+    }
+
+    console.error("Book details controller error", error);
+
+    return res.status(500).json({
+      error: "BOOK_DETAILS_FAILED",
+      message: "Failed to fetch book details"
+    });
+  }
+};
 
 export const searchBooks = async (req: Request, res: Response) => {
   try {
@@ -88,6 +125,8 @@ export const searchBooks = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
+    console.error("Book search controller error", error);
+
     if (error instanceof Error) {
       if (error.message.includes("required")) {
         return res.status(400).json({
@@ -96,8 +135,6 @@ export const searchBooks = async (req: Request, res: Response) => {
         });
       }
     }
-
-    console.error("Book search controller error", error);
 
     return res.status(500).json({
       error: "BOOK_SEARCH_FAILED",
