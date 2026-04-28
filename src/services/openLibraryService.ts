@@ -3,6 +3,7 @@ import axios from "axios";
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 const OPEN_LIBRARY_BASE_URL = "https://openlibrary.org";
 const OPEN_LIBRARY_WORKS_URL = `${OPEN_LIBRARY_BASE_URL}/works`;
+const OPEN_LIBRARY_BOOKS_URL = `${OPEN_LIBRARY_BASE_URL}/books`;
 const OPEN_LIBRARY_AUTHORS_URL = `${OPEN_LIBRARY_BASE_URL}/authors`;
 const OPEN_LIBRARY_TIMEOUT_MS = 3000;
 const OPEN_LIBRARY_DETAIL_TIMEOUT_MS = 8000;
@@ -153,6 +154,10 @@ interface OpenLibraryExcerpt {
   excerpt?: string | OpenLibraryTextValue;
 }
 
+interface OpenLibraryReference {
+  key?: string;
+}
+
 interface OpenLibraryWorkResponse {
   key: string;
   title: string;
@@ -209,6 +214,7 @@ interface OpenLibraryWorkEditionEntry {
   physical_format?: string;
   publish_date?: string;
   publishers?: string[];
+  series?: string[] | string;
   languages?: Array<{
     key?: string;
   }>;
@@ -216,6 +222,10 @@ interface OpenLibraryWorkEditionEntry {
 
 interface OpenLibraryWorkEditionsResponse {
   entries?: OpenLibraryWorkEditionEntry[];
+}
+
+interface OpenLibraryEditionResponse {
+  works?: OpenLibraryReference[];
 }
 
 interface OpenLibraryDetailFallbackDoc {
@@ -279,6 +289,7 @@ const clampNumber = (value: number, minimum: number, maximum?: number) => {
 };
 
 const getNormalizedWorkId = (key: string) => key.split("/").filter(Boolean).pop() || key;
+const isEditionId = (key: string) => /^OL\d+M$/i.test(getNormalizedWorkId(key));
 
 const getPrimaryIsbn = (isbns?: string[]) => {
   if (!Array.isArray(isbns) || isbns.length === 0) {
@@ -351,6 +362,8 @@ const getSeriesKeyFromName = (seriesName: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const getNormalizedStringList = (values?: string[]) => {
   if (!Array.isArray(values)) {
     return [];
@@ -394,6 +407,67 @@ const mapAuthorWorkToSummary = (work: OpenLibraryAuthorWorkEntry): SimilarBookSu
   title: work.title,
   coverUrl: getCoverUrl(work.covers?.[0]),
 });
+
+const getSeriesPositionFromEditionSeries = (
+  editionSeries: string[] | string | undefined,
+  seriesName: string
+) => {
+  const seriesValues = Array.isArray(editionSeries) ? editionSeries : editionSeries ? [editionSeries] : [];
+  const normalizedSeriesName = seriesName.trim();
+
+  if (!normalizedSeriesName) {
+    return undefined;
+  }
+
+  const seriesNamePattern = new RegExp(escapeRegExp(normalizedSeriesName), "i");
+
+  for (const rawSeriesValue of seriesValues) {
+    const normalizedSeriesValue = getNormalizedSingleString(rawSeriesValue);
+
+    if (!normalizedSeriesValue || !seriesNamePattern.test(normalizedSeriesValue)) {
+      continue;
+    }
+
+    const hashMatch = normalizedSeriesValue.match(/#\s*(\d+(?:\.\d+)?)/);
+
+    if (hashMatch?.[1]) {
+      return hashMatch[1];
+    }
+
+    const bookMatch = normalizedSeriesValue.match(/\bbook\s+(\d+(?:\.\d+)?)\b/i);
+
+    if (bookMatch?.[1]) {
+      return bookMatch[1];
+    }
+
+    const trailingNumberMatch = normalizedSeriesValue.match(/(?:^|[^\d])(\d+(?:\.\d+)?)\s*$/);
+
+    if (trailingNumberMatch?.[1]) {
+      return trailingNumberMatch[1];
+    }
+  }
+
+  return undefined;
+};
+
+const getSeriesPositionFromEditions = (
+  editions: OpenLibraryWorkEditionEntry[],
+  seriesName: string | undefined
+) => {
+  if (!seriesName) {
+    return undefined;
+  }
+
+  for (const edition of editions) {
+    const seriesPosition = getSeriesPositionFromEditionSeries(edition.series, seriesName);
+
+    if (seriesPosition) {
+      return seriesPosition;
+    }
+  }
+
+  return undefined;
+};
 
 const delay = async (ms: number) =>
   new Promise<void>((resolve) => {
@@ -481,6 +555,17 @@ const getOpenLibraryWorkEditions = async (workId: string) => {
   );
 
   return response.entries ?? [];
+};
+
+const getOpenLibraryEditionWorkId = async (editionId: string) => {
+  const response = await fetchOpenLibraryJson<OpenLibraryEditionResponse>(
+    `${OPEN_LIBRARY_BOOKS_URL}/${editionId}.json`,
+    OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+  );
+
+  const workKey = response.works?.[0]?.key;
+
+  return workKey ? getNormalizedWorkId(workKey) : undefined;
 };
 
 const isOpenLibraryRequestError = (error: unknown): error is OpenLibraryRequestError =>
@@ -654,7 +739,10 @@ const getAuthorDetails = async (
 
 
 export const getOpenLibraryBookById = async (workId: string): Promise<BookDetailResponse> => {
-  const normalizedWorkId = getNormalizedWorkId(workId);
+  const requestedBookId = getNormalizedWorkId(workId);
+  const normalizedWorkId = isEditionId(requestedBookId)
+    ? (await getOpenLibraryEditionWorkId(requestedBookId)) ?? requestedBookId
+    : requestedBookId;
 
   try {
     const work = await fetchOpenLibraryJson<OpenLibraryWorkResponse>(
@@ -698,8 +786,6 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
       });
     }
 
-    const similarBooks = await getSimilarBooksBySubjects(work.subjects, normalizedWorkId);
-
     const authors: BookDetailAuthor[] = authorResponses
       .filter((author): author is OpenLibraryAuthorResponse => Boolean(author?.name))
       .map((author) => ({
@@ -707,10 +793,13 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         key: author.key ? getNormalizedWorkId(author.key) : undefined,
       }));
 
+    const similarBooks = await getSimilarBooksBySubjects(work.subjects, normalizedWorkId);
+
+    let editionEntries: OpenLibraryWorkEditionEntry[] = [];
     let editions: BookDetailEdition[] | undefined;
 
     try {
-      const editionEntries = await getOpenLibraryWorkEditions(normalizedWorkId);
+      editionEntries = await getOpenLibraryWorkEditions(normalizedWorkId);
       const mappedEditions = editionEntries
         .map(mapEditionToSummary)
         .filter((edition) => edition.id !== normalizedWorkId)
@@ -746,12 +835,13 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         }
       : undefined;
 
-    const seriesPosition =
+    const seriesPositionFromWork =
       typeof work.series_position === "number"
         ? String(work.series_position)
         : typeof work.series_position === "string" && work.series_position.trim().length > 0
         ? work.series_position.trim()
         : undefined;
+    const seriesPosition = seriesPositionFromWork ?? getSeriesPositionFromEditions(editionEntries, seriesName);
 
     const ratingAverage =
       typeof work.rating?.average === "number"
