@@ -79,6 +79,12 @@ export interface BookDetailRating {
   count?: number;
 }
 
+export interface BookDetailCommunityRating {
+  average: number;
+  ratingsCount: number;
+  reviewsCount: number;
+}
+
 export interface SimilarBookSummary {
   id: string;
   title: string;
@@ -134,6 +140,7 @@ export interface BookDetailResponse {
   series?: BookDetailSeries;
   seriesPosition?: string;
   rating?: BookDetailRating;
+  communityRating?: BookDetailCommunityRating;
   reviews?: BookDetailReview[];
   authorDetails?: BookDetailAuthorDetails;
   editions?: BookDetailEdition[];

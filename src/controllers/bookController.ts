@@ -4,6 +4,45 @@ import LibraryEntryModel from "../models/libraryEntryModel";
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+interface CommunityRatingAggregate {
+  averageRating: number;
+  ratingsCount: number;
+}
+
+const getBookCommunityRating = async (externalBookId: string) => {
+  const [ratingSummaries, reviewsCount] = await Promise.all([
+    LibraryEntryModel.aggregate<CommunityRatingAggregate>([
+      {
+        $match: {
+          bookSource: "open_library",
+          externalBookId,
+          rating: { $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: "$rating" },
+          ratingsCount: { $sum: 1 }
+        }
+      }
+    ]),
+    LibraryEntryModel.countDocuments({
+      bookSource: "open_library",
+      externalBookId,
+      notes: { $regex: /\S/ }
+    })
+  ]);
+
+  const ratingSummary = ratingSummaries[0];
+
+  return {
+    average: ratingSummary?.averageRating ?? 0,
+    ratingsCount: ratingSummary?.ratingsCount ?? 0,
+    reviewsCount
+  };
+};
+
 export const getBookById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -19,10 +58,14 @@ export const getBookById = async (req: Request, res: Response) => {
     }
 
     const book = await getOpenLibraryBookById(normalizedBookId);
+    const communityRating = await getBookCommunityRating(book.externalBookId);
 
     return res.status(200).json({
       error: null,
-      data: book
+      data: {
+        ...book,
+        communityRating
+      }
     });
   } catch (error) {
     if (error instanceof Error) {
