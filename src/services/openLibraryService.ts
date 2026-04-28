@@ -6,6 +6,15 @@ const OPEN_LIBRARY_WORKS_URL = `${OPEN_LIBRARY_BASE_URL}/works`;
 const OPEN_LIBRARY_AUTHORS_URL = `${OPEN_LIBRARY_BASE_URL}/authors`;
 const OPEN_LIBRARY_TIMEOUT_MS = 3000;
 const OPEN_LIBRARY_DETAIL_TIMEOUT_MS = 5000;
+const OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS = [
+  "key",
+  "title",
+  "author_name",
+  "cover_i",
+  "first_publish_year",
+  "subject",
+  "edition_count",
+].join(",");
 const OPEN_LIBRARY_SEARCH_FIELDS = [
   "key",
   "title",
@@ -147,6 +156,20 @@ interface OpenLibraryEditionLookupResponse {
   docs?: OpenLibraryEditionDoc[];
 }
 
+interface OpenLibraryDetailFallbackDoc {
+  key: string;
+  title: string;
+  author_name?: string[];
+  cover_i?: number;
+  first_publish_year?: number;
+  subject?: string[];
+  edition_count?: number;
+}
+
+interface OpenLibraryDetailFallbackResponse {
+  docs?: OpenLibraryDetailFallbackDoc[];
+}
+
 interface OpenLibrarySearchDoc {
   key: string;
   title: string;
@@ -160,6 +183,13 @@ interface OpenLibraryApiResponse {
   docs?: OpenLibrarySearchDoc[];
   numFound?: number;
   num_found?: number;
+}
+
+interface OpenLibraryRequestError {
+  code?: string;
+  response?: {
+    status?: number;
+  };
 }
 
 const normalizeSearchValue = (value?: string) => value?.trim() || undefined;
@@ -309,6 +339,74 @@ const getOpenLibraryEditionLookup = async (workId: string) => {
   return response.data.docs?.[0];
 };
 
+const isOpenLibraryRequestError = (error: unknown): error is OpenLibraryRequestError =>
+  typeof error === "object" && error !== null;
+
+const shouldUseDetailFallback = (error: unknown) => {
+  if (!isOpenLibraryRequestError(error)) {
+    return false;
+  }
+
+  return error.code === "ECONNABORTED" || !error.response;
+};
+
+const getRequestErrorStatus = (error: unknown) => {
+  if (!isOpenLibraryRequestError(error)) {
+    return undefined;
+  }
+
+  return error.response?.status;
+};
+
+const getOpenLibraryDetailFallback = async (workId: string) => {
+  const response = await axios.get<OpenLibraryDetailFallbackResponse>(OPEN_LIBRARY_SEARCH_URL, {
+    timeout: OPEN_LIBRARY_DETAIL_TIMEOUT_MS,
+    params: {
+      q: `key:/works/${workId}`,
+      fields: OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS,
+      limit: 1,
+    },
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  return response.data.docs?.[0];
+};
+
+const mapFallbackAuthorNames = (authorNames?: string[]): BookDetailAuthor[] => {
+  if (!Array.isArray(authorNames)) {
+    return [];
+  }
+
+  return authorNames
+    .filter((authorName): authorName is string => typeof authorName === "string")
+    .map((authorName) => authorName.trim())
+    .filter((authorName) => authorName.length > 0)
+    .map((authorName) => ({ name: authorName }));
+};
+
+const mapFallbackBookDetail = (
+  normalizedWorkId: string,
+  fallbackDoc: OpenLibraryDetailFallbackDoc
+): BookDetailResponse => ({
+  source: "open_library",
+  externalBookId: normalizedWorkId,
+  title: fallbackDoc.title,
+  cover: getCoverUrl(fallbackDoc.cover_i),
+  authors: mapFallbackAuthorNames(fallbackDoc.author_name),
+  publishedYear: fallbackDoc.first_publish_year,
+  subjects: getNormalizedStringList(fallbackDoc.subject),
+  subjectPeople: [],
+  subjectPlaces: [],
+  subjectTimes: [],
+  publishers: [],
+  publishPlaces: [],
+  languages: [],
+  excerpts: [],
+  editionCount: fallbackDoc.edition_count,
+});
+
 
 export const getOpenLibraryBookById = async (workId: string): Promise<BookDetailResponse> => {
   const normalizedWorkId = getNormalizedWorkId(workId);
@@ -420,13 +518,34 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
             }
           : undefined,
     };
-  } catch (error: any) {
-    console.error("Open Library book detail fetch failed", {
-      message: error?.message,
-      workId: normalizedWorkId,
-      status: error?.response?.status,
-      data: error?.response?.data,
-    });
+  } catch (error: unknown) {
+    if (shouldUseDetailFallback(error)) {
+      console.error("Open Library primary book detail fetch failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        workId: normalizedWorkId,
+        status: getRequestErrorStatus(error),
+      });
+
+      try {
+        const fallbackDoc = await getOpenLibraryDetailFallback(normalizedWorkId);
+
+        if (fallbackDoc) {
+          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc);
+        }
+      } catch (fallbackError: unknown) {
+        console.error("Open Library fallback book detail fetch failed", {
+          message: fallbackError instanceof Error ? fallbackError.message : "Unknown error",
+          workId: normalizedWorkId,
+          status: getRequestErrorStatus(fallbackError),
+        });
+      }
+    } else {
+      console.error("Open Library primary book detail fetch failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        workId: normalizedWorkId,
+        status: getRequestErrorStatus(error),
+      });
+    }
 
     throw new Error("Failed to fetch book details from Open Library.");
   }

@@ -33,13 +33,12 @@ setupCors();
 app.use('/api', routes);
 
 export function startServer(){
-
-
-    // Test database connection before starting the server
-    testConnection();
-
    const PORT: number = parseInt(process.env.PORT as string) || 4000;
+
     app.listen(PORT, function(){
         console.log("Server is up and running on port:" + PORT);
     });
+
+    // Keep startup resilient even if the database is temporarily unavailable
+    void testConnection();
 }
