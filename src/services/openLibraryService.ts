@@ -5,7 +5,8 @@ const OPEN_LIBRARY_BASE_URL = "https://openlibrary.org";
 const OPEN_LIBRARY_WORKS_URL = `${OPEN_LIBRARY_BASE_URL}/works`;
 const OPEN_LIBRARY_AUTHORS_URL = `${OPEN_LIBRARY_BASE_URL}/authors`;
 const OPEN_LIBRARY_TIMEOUT_MS = 3000;
-const OPEN_LIBRARY_DETAIL_TIMEOUT_MS = 5000;
+const OPEN_LIBRARY_DETAIL_TIMEOUT_MS = 8000;
+const OPEN_LIBRARY_RETRY_ATTEMPTS = 2;
 const OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS = [
   "key",
   "title",
@@ -14,6 +15,12 @@ const OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS = [
   "first_publish_year",
   "subject",
   "edition_count",
+].join(",");
+const OPEN_LIBRARY_SIMILAR_BOOK_FIELDS = [
+  "key",
+  "title",
+  "author_name",
+  "cover_i",
 ].join(",");
 const OPEN_LIBRARY_SEARCH_FIELDS = [
   "key",
@@ -71,6 +78,13 @@ export interface BookDetailRating {
   count?: number;
 }
 
+export interface SimilarBookSummary {
+  id: string;
+  title: string;
+  coverUrl?: string;
+  authors?: string[];
+}
+
 export interface BookDetailResponse {
   source: "open_library";
   externalBookId: string;
@@ -93,6 +107,7 @@ export interface BookDetailResponse {
   series?: BookDetailSeries;
   seriesPosition?: string;
   rating?: BookDetailRating;
+  similarBooks?: SimilarBookSummary[];
 }
 
 interface OpenLibraryWorkAuthorRef {
@@ -300,13 +315,71 @@ const getNormalizedExcerptList = (excerpts?: OpenLibraryExcerpt[]) => {
     .filter((value): value is string => Boolean(value));
 };
 
+const getSimilarBookSubjects = (subjects?: string[]) =>
+  getNormalizedStringList(subjects)
+    .filter((subject) => !subject.toLowerCase().startsWith("series:"))
+    .slice(0, 3);
+
+const mapSearchDocToSimilarBookSummary = (doc: OpenLibrarySearchDoc): SimilarBookSummary => ({
+  id: getNormalizedWorkId(doc.key),
+  title: doc.title,
+  coverUrl: getCoverUrl(doc.cover_i),
+  authors: getNormalizedStringList(doc.author_name),
+});
+
+const delay = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isRetriableOpenLibraryError = (error: unknown) => {
+  if (!isOpenLibraryRequestError(error)) {
+    return false;
+  }
+
+  return error.code === "ECONNABORTED" || error.code === "ECONNRESET" || !error.response;
+};
+
+const withOpenLibraryRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      attempt += 1;
+
+      if (attempt >= OPEN_LIBRARY_RETRY_ATTEMPTS || !isRetriableOpenLibraryError(error)) {
+        throw error;
+      }
+
+      await delay(250 * attempt);
+    }
+  }
+};
+
 const fetchOpenLibraryJson = async <T>(url: string, timeout: number): Promise<T> => {
-  const response = await axios.get<T>(url, {
+  const response = await withOpenLibraryRetry(() => Promise.resolve(axios.get<T>(url, {
     timeout,
     headers: {
       Accept: "application/json",
     },
-  });
+  })));
+
+  return response.data;
+};
+
+const fetchOpenLibrarySearch = async <T>(
+  params: Record<string, string | number | undefined>,
+  timeout: number
+): Promise<T> => {
+  const response = await withOpenLibraryRetry(() => Promise.resolve(axios.get<T>(OPEN_LIBRARY_SEARCH_URL, {
+    timeout,
+    params,
+    headers: {
+      Accept: "application/json",
+    },
+  })));
 
   return response.data;
 };
@@ -324,19 +397,13 @@ const getOpenLibraryNumFound = (data: OpenLibraryApiResponse) => {
 };
 
 const getOpenLibraryEditionLookup = async (workId: string) => {
-  const response = await axios.get<OpenLibraryEditionLookupResponse>(OPEN_LIBRARY_SEARCH_URL, {
-    timeout: OPEN_LIBRARY_DETAIL_TIMEOUT_MS,
-    params: {
-      q: `key:/works/${workId}`,
-      fields: "number_of_pages_median,edition_count,publisher,publish_place,language",
-      limit: 1,
-    },
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const response = await fetchOpenLibrarySearch<OpenLibraryEditionLookupResponse>({
+    q: `key:/works/${workId}`,
+    fields: "number_of_pages_median,edition_count,publisher,publish_place,language",
+    limit: 1,
+  }, OPEN_LIBRARY_DETAIL_TIMEOUT_MS);
 
-  return response.data.docs?.[0];
+  return response.docs?.[0];
 };
 
 const isOpenLibraryRequestError = (error: unknown): error is OpenLibraryRequestError =>
@@ -347,7 +414,7 @@ const shouldUseDetailFallback = (error: unknown) => {
     return false;
   }
 
-  return error.code === "ECONNABORTED" || !error.response;
+  return error.code === "ECONNABORTED" || error.code === "ECONNRESET" || !error.response;
 };
 
 const getRequestErrorStatus = (error: unknown) => {
@@ -359,19 +426,63 @@ const getRequestErrorStatus = (error: unknown) => {
 };
 
 const getOpenLibraryDetailFallback = async (workId: string) => {
-  const response = await axios.get<OpenLibraryDetailFallbackResponse>(OPEN_LIBRARY_SEARCH_URL, {
-    timeout: OPEN_LIBRARY_DETAIL_TIMEOUT_MS,
-    params: {
-      q: `key:/works/${workId}`,
-      fields: OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS,
-      limit: 1,
-    },
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const response = await fetchOpenLibrarySearch<OpenLibraryDetailFallbackResponse>({
+    q: `key:/works/${workId}`,
+    fields: OPEN_LIBRARY_DETAIL_FALLBACK_FIELDS,
+    limit: 1,
+  }, OPEN_LIBRARY_DETAIL_TIMEOUT_MS);
 
-  return response.data.docs?.[0];
+  return response.docs?.[0];
+};
+
+const getSimilarBooksBySubjects = async (
+  subjects: string[] | undefined,
+  excludedWorkId: string
+): Promise<SimilarBookSummary[]> => {
+  const similarSubjects = getSimilarBookSubjects(subjects);
+
+  if (similarSubjects.length === 0) {
+    return [];
+  }
+
+  const similarBooks: SimilarBookSummary[] = [];
+  const seenBookIds = new Set<string>([excludedWorkId]);
+
+  for (const subject of similarSubjects) {
+    try {
+      const response = await fetchOpenLibrarySearch<OpenLibraryApiResponse>({
+        q: `subject:${subject}`,
+        fields: OPEN_LIBRARY_SIMILAR_BOOK_FIELDS,
+        limit: 8,
+      }, OPEN_LIBRARY_TIMEOUT_MS);
+
+      const docs = response.docs ?? [];
+
+      for (const doc of docs) {
+        const normalizedId = getNormalizedWorkId(doc.key);
+
+        if (seenBookIds.has(normalizedId)) {
+          continue;
+        }
+
+        seenBookIds.add(normalizedId);
+        similarBooks.push(mapSearchDocToSimilarBookSummary(doc));
+
+        if (similarBooks.length >= 8) {
+          return similarBooks;
+        }
+      }
+    } catch (error: unknown) {
+      console.error("Open Library similar books fetch failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        workId: excludedWorkId,
+        subject,
+        status: getRequestErrorStatus(error),
+      });
+    }
+  }
+
+  return similarBooks;
 };
 
 const mapFallbackAuthorNames = (authorNames?: string[]): BookDetailAuthor[] => {
@@ -388,7 +499,8 @@ const mapFallbackAuthorNames = (authorNames?: string[]): BookDetailAuthor[] => {
 
 const mapFallbackBookDetail = (
   normalizedWorkId: string,
-  fallbackDoc: OpenLibraryDetailFallbackDoc
+  fallbackDoc: OpenLibraryDetailFallbackDoc,
+  similarBooks: SimilarBookSummary[]
 ): BookDetailResponse => ({
   source: "open_library",
   externalBookId: normalizedWorkId,
@@ -405,6 +517,7 @@ const mapFallbackBookDetail = (
   languages: [],
   excerpts: [],
   editionCount: fallbackDoc.edition_count,
+  similarBooks,
 });
 
 
@@ -452,6 +565,8 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         status: error?.response?.status,
       });
     }
+
+    const similarBooks = await getSimilarBooksBySubjects(work.subjects, normalizedWorkId);
 
     const authors: BookDetailAuthor[] = authorResponses
       .filter((author): author is OpenLibraryAuthorResponse => Boolean(author?.name))
@@ -517,6 +632,7 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
               count: ratingCount,
             }
           : undefined,
+      similarBooks,
     };
   } catch (error: unknown) {
     if (shouldUseDetailFallback(error)) {
@@ -530,7 +646,8 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         const fallbackDoc = await getOpenLibraryDetailFallback(normalizedWorkId);
 
         if (fallbackDoc) {
-          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc);
+          const similarBooks = await getSimilarBooksBySubjects(fallbackDoc.subject, normalizedWorkId);
+          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc, similarBooks);
         }
       } catch (fallbackError: unknown) {
         console.error("Open Library fallback book detail fetch failed", {
