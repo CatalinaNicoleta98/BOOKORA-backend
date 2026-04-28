@@ -85,6 +85,32 @@ export interface SimilarBookSummary {
   authors?: string[];
 }
 
+export interface BookDetailEdition {
+  id: string;
+  title: string;
+  coverUrl?: string;
+  format?: string;
+  publishDate?: string;
+  publisher?: string;
+  language?: string;
+}
+
+export interface BookDetailAuthorDetails {
+  id: string;
+  name: string;
+  bio?: string;
+  photoUrl?: string;
+  topWorks?: SimilarBookSummary[];
+}
+
+export interface BookDetailReview {
+  id: string;
+  userName: string;
+  rating: number;
+  content: string;
+  createdAt: string;
+}
+
 export interface BookDetailResponse {
   source: "open_library";
   externalBookId: string;
@@ -107,6 +133,9 @@ export interface BookDetailResponse {
   series?: BookDetailSeries;
   seriesPosition?: string;
   rating?: BookDetailRating;
+  reviews?: BookDetailReview[];
+  authorDetails?: BookDetailAuthorDetails;
+  editions?: BookDetailEdition[];
   similarBooks?: SimilarBookSummary[];
 }
 
@@ -156,6 +185,8 @@ interface OpenLibraryWorkResponse {
 
 interface OpenLibraryAuthorResponse {
   key?: string;
+  bio?: string | OpenLibraryTextValue;
+  photos?: number[];
   name?: string;
 }
 
@@ -169,6 +200,22 @@ interface OpenLibraryEditionDoc {
 
 interface OpenLibraryEditionLookupResponse {
   docs?: OpenLibraryEditionDoc[];
+}
+
+interface OpenLibraryWorkEditionEntry {
+  key: string;
+  title?: string;
+  covers?: number[];
+  physical_format?: string;
+  publish_date?: string;
+  publishers?: string[];
+  languages?: Array<{
+    key?: string;
+  }>;
+}
+
+interface OpenLibraryWorkEditionsResponse {
+  entries?: OpenLibraryWorkEditionEntry[];
 }
 
 interface OpenLibraryDetailFallbackDoc {
@@ -198,6 +245,16 @@ interface OpenLibraryApiResponse {
   docs?: OpenLibrarySearchDoc[];
   numFound?: number;
   num_found?: number;
+}
+
+interface OpenLibraryAuthorWorkEntry {
+  key: string;
+  title: string;
+  covers?: number[];
+}
+
+interface OpenLibraryAuthorWorksResponse {
+  entries?: OpenLibraryAuthorWorkEntry[];
 }
 
 interface OpenLibraryRequestError {
@@ -305,6 +362,11 @@ const getNormalizedStringList = (values?: string[]) => {
     .filter((value) => value.length > 0);
 };
 
+const getNormalizedSingleString = (value?: string) => {
+  const normalizedValue = value?.trim();
+  return normalizedValue && normalizedValue.length > 0 ? normalizedValue : undefined;
+};
+
 const getNormalizedExcerptList = (excerpts?: OpenLibraryExcerpt[]) => {
   if (!Array.isArray(excerpts)) {
     return [];
@@ -325,6 +387,12 @@ const mapSearchDocToSimilarBookSummary = (doc: OpenLibrarySearchDoc): SimilarBoo
   title: doc.title,
   coverUrl: getCoverUrl(doc.cover_i),
   authors: getNormalizedStringList(doc.author_name),
+});
+
+const mapAuthorWorkToSummary = (work: OpenLibraryAuthorWorkEntry): SimilarBookSummary => ({
+  id: getNormalizedWorkId(work.key),
+  title: work.title,
+  coverUrl: getCoverUrl(work.covers?.[0]),
 });
 
 const delay = async (ms: number) =>
@@ -406,6 +474,15 @@ const getOpenLibraryEditionLookup = async (workId: string) => {
   return response.docs?.[0];
 };
 
+const getOpenLibraryWorkEditions = async (workId: string) => {
+  const response = await fetchOpenLibraryJson<OpenLibraryWorkEditionsResponse>(
+    `${OPEN_LIBRARY_WORKS_URL}/${workId}/editions.json`,
+    OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+  );
+
+  return response.entries ?? [];
+};
+
 const isOpenLibraryRequestError = (error: unknown): error is OpenLibraryRequestError =>
   typeof error === "object" && error !== null;
 
@@ -434,6 +511,18 @@ const getOpenLibraryDetailFallback = async (workId: string) => {
 
   return response.docs?.[0];
 };
+
+const getOpenLibraryAuthorWorks = async (authorId: string) => {
+  const response = await fetchOpenLibraryJson<OpenLibraryAuthorWorksResponse>(
+    `${OPEN_LIBRARY_AUTHORS_URL}/${authorId}/works.json?limit=6`,
+    OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+  );
+
+  return response.entries ?? [];
+};
+
+const getPhotoUrl = (authorId: string) =>
+  `https://covers.openlibrary.org/a/olid/${authorId}-M.jpg`;
 
 const getSimilarBooksBySubjects = async (
   subjects: string[] | undefined,
@@ -500,7 +589,8 @@ const mapFallbackAuthorNames = (authorNames?: string[]): BookDetailAuthor[] => {
 const mapFallbackBookDetail = (
   normalizedWorkId: string,
   fallbackDoc: OpenLibraryDetailFallbackDoc,
-  similarBooks: SimilarBookSummary[]
+  similarBooks: SimilarBookSummary[],
+  editions: BookDetailEdition[]
 ): BookDetailResponse => ({
   source: "open_library",
   externalBookId: normalizedWorkId,
@@ -517,8 +607,50 @@ const mapFallbackBookDetail = (
   languages: [],
   excerpts: [],
   editionCount: fallbackDoc.edition_count,
+  reviews: [],
+  editions,
   similarBooks,
 });
+
+const mapEditionToSummary = (edition: OpenLibraryWorkEditionEntry): BookDetailEdition => ({
+  id: getNormalizedWorkId(edition.key),
+  title: getNormalizedSingleString(edition.title) ?? "Edition",
+  coverUrl: getCoverUrl(edition.covers?.[0]),
+  format: getNormalizedSingleString(edition.physical_format),
+  publishDate: getNormalizedSingleString(edition.publish_date),
+  publisher: getNormalizedSingleString(edition.publishers?.[0]),
+  language: getNormalizedSingleString(edition.languages?.[0]?.key?.split("/").filter(Boolean).pop()),
+});
+
+const getAuthorDetails = async (
+  author: BookDetailAuthor | undefined,
+  currentWorkId: string
+): Promise<BookDetailAuthorDetails | undefined> => {
+  if (!author?.key || !author.name) {
+    return undefined;
+  }
+
+  const [authorResponse, authorWorks] = await Promise.all([
+    fetchOpenLibraryJson<OpenLibraryAuthorResponse>(
+      `${OPEN_LIBRARY_AUTHORS_URL}/${author.key}.json`,
+      OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+    ),
+    getOpenLibraryAuthorWorks(author.key),
+  ]);
+
+  const topWorks = authorWorks
+    .map(mapAuthorWorkToSummary)
+    .filter((work) => work.id !== currentWorkId)
+    .slice(0, 5);
+
+  return {
+    id: author.key,
+    name: authorResponse.name?.trim() ?? author.name,
+    bio: getNormalizedTextValue(authorResponse.bio),
+    photoUrl: authorResponse.photos?.length ? getPhotoUrl(author.key) : undefined,
+    topWorks: topWorks.length ? topWorks : undefined,
+  };
+};
 
 
 export const getOpenLibraryBookById = async (workId: string): Promise<BookDetailResponse> => {
@@ -575,6 +707,37 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
         key: author.key ? getNormalizedWorkId(author.key) : undefined,
       }));
 
+    let editions: BookDetailEdition[] | undefined;
+
+    try {
+      const editionEntries = await getOpenLibraryWorkEditions(normalizedWorkId);
+      const mappedEditions = editionEntries
+        .map(mapEditionToSummary)
+        .filter((edition) => edition.id !== normalizedWorkId)
+        .slice(0, 8);
+
+      editions = mappedEditions.length ? mappedEditions : undefined;
+    } catch (error: unknown) {
+      console.error("Open Library editions fetch failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        workId: normalizedWorkId,
+        status: getRequestErrorStatus(error),
+      });
+    }
+
+    let authorDetails: BookDetailAuthorDetails | undefined;
+
+    try {
+      authorDetails = await getAuthorDetails(authors[0], normalizedWorkId);
+    } catch (error: unknown) {
+      console.error("Open Library author details fetch failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        workId: normalizedWorkId,
+        authorKey: authors[0]?.key,
+        status: getRequestErrorStatus(error),
+      });
+    }
+
     const seriesName = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
     const series = seriesName
       ? {
@@ -625,6 +788,9 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
       pageCount: editionLookup?.number_of_pages_median,
       series,
       seriesPosition,
+      reviews: [],
+      authorDetails,
+      editions,
       rating:
         typeof ratingAverage === "number" || typeof ratingCount === "number"
           ? {
@@ -647,7 +813,21 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
 
         if (fallbackDoc) {
           const similarBooks = await getSimilarBooksBySubjects(fallbackDoc.subject, normalizedWorkId);
-          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc, similarBooks);
+          let editions: BookDetailEdition[] = [];
+
+          try {
+            editions = (await getOpenLibraryWorkEditions(normalizedWorkId))
+              .map(mapEditionToSummary)
+              .slice(0, 8);
+          } catch (editionError: unknown) {
+            console.error("Open Library fallback editions fetch failed", {
+              message: editionError instanceof Error ? editionError.message : "Unknown error",
+              workId: normalizedWorkId,
+              status: getRequestErrorStatus(editionError),
+            });
+          }
+
+          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc, similarBooks, editions);
         }
       } catch (fallbackError: unknown) {
         console.error("Open Library fallback book detail fetch failed", {
