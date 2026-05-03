@@ -21,9 +21,15 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       cover,
       publishedYear,
       status,
-      format,
+      format, // legacy
+      formats,
+      customLists,
       rating,
+      reviewText,
+      isSpoiler,
       notes,
+      dateStarted,
+      dateFinished,
       // progress
       progressValue,
       progressMax,
@@ -70,8 +76,14 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       publishedYear,
       status,
       format,
+      formats,
+      customLists,
       rating,
+      reviewText,
+      isSpoiler,
       notes,
+      dateStarted,
+      dateFinished,
       progressValue,
       progressMax,
       progressUnit
@@ -112,9 +124,15 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     const {
       status,
-      format,
+      format, // legacy
+      formats,
+      customLists,
       rating,
+      reviewText,
+      isSpoiler,
       notes,
+      dateStarted,
+      dateFinished,
       progressValue,
       progressMax,
       progressUnit
@@ -122,9 +140,15 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     const update: Record<string, unknown> = {};
     if (status !== undefined) update.status = status;
-    if (format !== undefined) update.format = format;
+    if (format !== undefined) update.format = format; // legacy
+    if (formats !== undefined) update.formats = formats;
+    if (customLists !== undefined) update.customLists = customLists;
     if (rating !== undefined) update.rating = rating;
+    if (reviewText !== undefined) update.reviewText = reviewText;
+    if (isSpoiler !== undefined) update.isSpoiler = isSpoiler;
     if (notes !== undefined) update.notes = notes;
+    if (dateStarted !== undefined) update.dateStarted = dateStarted;
+    if (dateFinished !== undefined) update.dateFinished = dateFinished;
     if (progressValue !== undefined) update.progressValue = progressValue;
     if (progressMax !== undefined) update.progressMax = progressMax;
     if (progressUnit !== undefined) update.progressUnit = progressUnit;

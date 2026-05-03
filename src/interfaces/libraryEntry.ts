@@ -37,11 +37,18 @@ export interface LibraryEntry {
 
   status: ReadingStatus;
 
-  format?: BookFormat;
+  format?: BookFormat; // legacy single format, kept temporarily for backward compatibility
+  formats?: BookFormat[];
+  customLists?: string[];
 
   rating?: number; // 0.5 – 5 (half-step)
 
+  reviewText?: string;
+  isSpoiler?: boolean;
   notes?: string;
+
+  dateStarted?: Date;
+  dateFinished?: Date;
 
   // Progress tracking
   progressValue?: number; // current page, %, or minutes

@@ -21,10 +21,17 @@ export interface LibraryEntryDocument extends Document {
   publishedYear?: number;
 
   status: ReadingStatus;
-  format?: BookFormat;
+  format?: BookFormat; // legacy single format, kept temporarily for backward compatibility
+  formats?: BookFormat[];
+  customLists?: string[];
 
   rating?: number;
+  reviewText?: string;
+  isSpoiler?: boolean;
   notes?: string;
+
+  dateStarted?: Date;
+  dateFinished?: Date;
 
   // Progress tracking
   progressValue?: number; // current page, %, minutes, or hours
@@ -109,6 +116,21 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
       enum: ["physical", "ebook", "audiobook"]
     },
 
+    formats: {
+      type: [String],
+      enum: ["physical", "ebook", "audiobook"],
+      default: []
+    },
+
+    customLists: {
+      type: [String],
+      default: [],
+      set: (values: string[]) =>
+        Array.isArray(values)
+          ? values.map((value) => value.trim()).filter(Boolean)
+          : []
+    },
+
     rating: {
       type: Number,
       min: 0.5,
@@ -119,9 +141,29 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
       }
     },
 
+    reviewText: {
+      type: String,
+      trim: true,
+      maxlength: 5000
+    },
+
+    isSpoiler: {
+      type: Boolean,
+      default: false
+    },
+
     notes: {
       type: String,
-      trim: true
+      trim: true,
+      maxlength: 5000
+    },
+
+    dateStarted: {
+      type: Date
+    },
+
+    dateFinished: {
+      type: Date
     },
 
     // Progress tracking
