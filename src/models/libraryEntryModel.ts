@@ -3,7 +3,8 @@ import type {
   BookSource,
   ReadingStatus,
   BookFormat,
-  CustomBookData
+  CustomBookData,
+  ReadingSession
 } from "../interfaces/libraryEntry";
 
 export interface LibraryEntryDocument extends Document {
@@ -32,6 +33,7 @@ export interface LibraryEntryDocument extends Document {
 
   dateStarted?: Date;
   dateFinished?: Date;
+  readingSessions?: ReadingSession[];
 
   // Progress tracking
   progressValue?: number; // current page, %, minutes, or hours
@@ -48,6 +50,18 @@ const CustomBookSchema = new Schema<CustomBookData>(
     author: { type: String, trim: true },
     cover: { type: String, trim: true },
     publishedYear: { type: Number }
+  },
+  { _id: false }
+);
+
+const ReadingSessionSchema = new Schema<ReadingSession>(
+  {
+    dateStarted: {
+      type: Date
+    },
+    dateFinished: {
+      type: Date
+    }
   },
   { _id: false }
 );
@@ -164,6 +178,11 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
 
     dateFinished: {
       type: Date
+    },
+
+    readingSessions: {
+      type: [ReadingSessionSchema],
+      default: []
     },
 
     // Progress tracking

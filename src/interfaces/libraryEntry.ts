@@ -21,6 +21,11 @@ export interface CustomBookData {
   publishedYear?: number;
 }
 
+export interface ReadingSession {
+  dateStarted?: Date;
+  dateFinished?: Date;
+}
+
 export interface LibraryEntry {
   userId: string;
 
@@ -49,6 +54,7 @@ export interface LibraryEntry {
 
   dateStarted?: Date;
   dateFinished?: Date;
+  readingSessions?: ReadingSession[];
 
   // Progress tracking
   progressValue?: number; // current page, %, or minutes

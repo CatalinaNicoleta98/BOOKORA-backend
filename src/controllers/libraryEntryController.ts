@@ -3,6 +3,18 @@ import mongoose from "mongoose";
 import LibraryEntryModel from "../models/libraryEntryModel";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 
+const normalizeReadingSessions = (
+  readingSessions?: Array<{ dateStarted?: string; dateFinished?: string }>
+) => {
+  if (!Array.isArray(readingSessions)) {
+    return undefined;
+  }
+
+  return readingSessions.filter(
+    (session) => Boolean(session?.dateStarted) || Boolean(session?.dateFinished)
+  );
+};
+
 // CREATE library entry
 export const createLibraryEntry = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -30,6 +42,7 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       notes,
       dateStarted,
       dateFinished,
+      readingSessions,
       // progress
       progressValue,
       progressMax,
@@ -65,6 +78,12 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ message: "Invalid progressUnit" });
     }
 
+    const normalizedReadingSessions = normalizeReadingSessions(readingSessions);
+    const latestReadingSession =
+      normalizedReadingSessions && normalizedReadingSessions.length > 0
+        ? normalizedReadingSessions[normalizedReadingSessions.length - 1]
+        : undefined;
+
     const entry = await LibraryEntryModel.create({
       userId: new mongoose.Types.ObjectId(userId),
       bookSource,
@@ -82,8 +101,9 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       reviewText,
       isSpoiler,
       notes,
-      dateStarted,
-      dateFinished,
+      dateStarted: latestReadingSession?.dateStarted ?? dateStarted,
+      dateFinished: latestReadingSession?.dateFinished ?? dateFinished,
+      readingSessions: normalizedReadingSessions,
       progressValue,
       progressMax,
       progressUnit
@@ -133,6 +153,7 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       notes,
       dateStarted,
       dateFinished,
+      readingSessions,
       progressValue,
       progressMax,
       progressUnit
@@ -147,8 +168,18 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
     if (reviewText !== undefined) update.reviewText = reviewText;
     if (isSpoiler !== undefined) update.isSpoiler = isSpoiler;
     if (notes !== undefined) update.notes = notes;
-    if (dateStarted !== undefined) update.dateStarted = dateStarted;
-    if (dateFinished !== undefined) update.dateFinished = dateFinished;
+    const normalizedReadingSessions = normalizeReadingSessions(readingSessions);
+    const latestReadingSession =
+      normalizedReadingSessions && normalizedReadingSessions.length > 0
+        ? normalizedReadingSessions[normalizedReadingSessions.length - 1]
+        : undefined;
+    if (dateStarted !== undefined || latestReadingSession?.dateStarted !== undefined) {
+      update.dateStarted = latestReadingSession?.dateStarted ?? dateStarted;
+    }
+    if (dateFinished !== undefined || latestReadingSession?.dateFinished !== undefined) {
+      update.dateFinished = latestReadingSession?.dateFinished ?? dateFinished;
+    }
+    if (readingSessions !== undefined) update.readingSessions = normalizedReadingSessions ?? [];
     if (progressValue !== undefined) update.progressValue = progressValue;
     if (progressMax !== undefined) update.progressMax = progressMax;
     if (progressUnit !== undefined) update.progressUnit = progressUnit;
