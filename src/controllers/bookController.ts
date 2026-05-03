@@ -9,6 +9,20 @@ interface CommunityRatingAggregate {
   ratingsCount: number;
 }
 
+interface PublicReviewAggregate {
+  _id: unknown;
+  rating?: number;
+  reviewText?: string;
+  notes?: string;
+  isSpoiler?: boolean;
+  updatedAt?: Date;
+  createdAt?: Date;
+  user?: {
+    name?: string;
+    avatarUrl?: string;
+  };
+}
+
 const getBookCommunityRating = async (externalBookId: string) => {
   const [ratingSummaries, reviewsCount] = await Promise.all([
     LibraryEntryModel.aggregate<CommunityRatingAggregate>([
@@ -43,6 +57,67 @@ const getBookCommunityRating = async (externalBookId: string) => {
   };
 };
 
+const getBookCommunityReviews = async (externalBookId: string) => {
+  const reviews = await LibraryEntryModel.aggregate<PublicReviewAggregate>([
+    {
+      $match: {
+        bookSource: "open_library",
+        externalBookId,
+        $or: [
+          { reviewText: { $regex: /\S/ } },
+          { notes: { $regex: /\S/ } }
+        ]
+      }
+    },
+    {
+      $sort: {
+        updatedAt: -1,
+        createdAt: -1
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "userId",
+        foreignField: "_id",
+        as: "user"
+      }
+    },
+    {
+      $unwind: {
+        path: "$user",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $project: {
+        _id: 1,
+        rating: 1,
+        reviewText: 1,
+        notes: 1,
+        isSpoiler: 1,
+        updatedAt: 1,
+        createdAt: 1,
+        user: {
+          name: "$user.name",
+          avatarUrl: "$user.avatarUrl"
+        }
+      }
+    }
+  ]);
+
+  return reviews.map((review) => ({
+    id: String(review._id),
+    userName: review.user?.name?.trim() || "Bookora Reader",
+    avatarUrl: review.user?.avatarUrl,
+    rating: typeof review.rating === "number" ? review.rating : 0,
+    content: review.reviewText?.trim() || review.notes?.trim() || "",
+    createdAt: (review.updatedAt || review.createdAt || new Date()).toISOString(),
+    source: "bookora" as const,
+    isSpoiler: review.isSpoiler ?? false
+  }));
+};
+
 export const getBookById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -58,13 +133,18 @@ export const getBookById = async (req: Request, res: Response) => {
     }
 
     const book = await getOpenLibraryBookById(normalizedBookId);
-    const communityRating = await getBookCommunityRating(book.externalBookId);
+    const [communityRating, communityReviews] = await Promise.all([
+      getBookCommunityRating(book.externalBookId),
+      getBookCommunityReviews(book.externalBookId)
+    ]);
 
     return res.status(200).json({
       error: null,
       data: {
         ...book,
-        communityRating
+        communityRating,
+        reviews: communityReviews,
+        reviewsCount: communityReviews.length
       }
     });
   } catch (error) {
