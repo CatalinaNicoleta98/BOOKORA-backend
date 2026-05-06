@@ -1,13 +1,16 @@
-export interface User extends Document {
+export interface User {
   _id: string;
 
   // Required
   name: string;
   email: string;
   password: string;
+  handle?: string;
+  handleLower?: string;
 
   // Optional profile fields
-  profilePicture?: string;
+  avatarUrl?: string;
+  coverImageUrl?: string;
   bio?: string;
 
   // Public profile settings

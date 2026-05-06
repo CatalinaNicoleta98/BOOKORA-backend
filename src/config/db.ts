@@ -3,8 +3,7 @@ import mongoose from "mongoose";
 export async function testConnection(){
     try {
         await connect();
-        await disconnect();
-        console.log("Database connection test successful(connect and disconnect)");
+        console.log("Database connection test successful");
     }catch(error){
         console.log("Database connection test failed:" + error);
 

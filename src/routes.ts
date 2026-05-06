@@ -1,18 +1,22 @@
-import {Router, Request, Response} from 'express';
-import { loginUser, registerUser } from './controllers/authController';
+import { Router, Request, Response } from 'express';
+import authRoutes from './routes/authRoutes';
+import libraryEntryRoutes from './routes/libraryEntryRoutes';
+import bookRoutes from './routes/bookRoutes';
+import profileRoutes from './routes/profileRoutes';
+import readerRoutes from './routes/readerRoutes';
 
 const router: Router = Router();
 
-//get, post, put, delete (CRUD)
-
-
+// Root route
 router.get('/', (req: Request, res: Response) => {
-
     res.status(200).send('Welcome to BOOKORA');
 });
 
+// Mount auth routes
+router.use('/auth', authRoutes);
+router.use('/users', profileRoutes);
+router.use('/readers', readerRoutes);
+router.use('/library', libraryEntryRoutes);
+router.use('/books', bookRoutes);
 
-//Authentication routes
-router.post('/auth/register', registerUser);
-router.post('/auth/login', loginUser);
 export default router;
