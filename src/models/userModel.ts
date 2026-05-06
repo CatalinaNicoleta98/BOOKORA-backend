@@ -1,5 +1,6 @@
 import { Schema, model } from "mongoose";
 import { User } from "../interfaces/user";
+import { isReservedHandle, isValidHandleFormat } from "../services/userHandleService";
 
 const userSchema = new Schema<User>({
   name: {
@@ -22,6 +23,27 @@ const userSchema = new Schema<User>({
     required: true,
     min: 6,
     max: 1024
+  },
+
+  handle: {
+    type: String,
+    trim: true,
+    validate: {
+      validator: (value: string | undefined): boolean => {
+        if (typeof value === "undefined") {
+          return true;
+        }
+
+        return isValidHandleFormat(value) && !isReservedHandle(value);
+      },
+      message: "Handle must be 3-30 characters, use only letters, numbers, or underscores, and not be reserved"
+    }
+  },
+
+  handleLower: {
+    type: String,
+    trim: true,
+    lowercase: true
   },
 
   // Preferred avatar field used across the app
@@ -54,5 +76,17 @@ const userSchema = new Schema<User>({
 }, {
   timestamps: true
 });
+
+userSchema.index(
+  { handleLower: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      handleLower: {
+        $type: "string"
+      }
+    }
+  }
+);
 
 export const userModel = model<User>("User", userSchema);

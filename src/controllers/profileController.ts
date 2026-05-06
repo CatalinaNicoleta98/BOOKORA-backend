@@ -1,14 +1,24 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { userModel } from "../models/userModel";
 import { connect } from "../config/db";
 import path from "path";
+import { type AuthenticatedRequest } from "../middleware/authMiddleware";
+import { ensureUserHandle } from "../services/userHandleService";
+import { toSafeUserResponse } from "../services/userResponseService";
+
+interface ProfileUpdatePayload {
+    avatarUrl?: string;
+    coverImageUrl?: string;
+    bio?: string;
+    name?: string;
+}
 
 // Get current authenticated user
-export async function getCurrentUser(req: Request, res: Response) {
+export async function getCurrentUser(req: AuthenticatedRequest, res: Response) {
     try {
         await connect();
 
-        const userId = (req as any).userId;
+        const userId = req.userId;
 
         if (!userId) {
             res.status(401).json({ error: "Unauthorized" });
@@ -22,19 +32,12 @@ export async function getCurrentUser(req: Request, res: Response) {
             return;
         }
 
+        const userWithHandle = await ensureUserHandle(user);
+
         res.status(200).json({
             error: null,
             data: {
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    avatarUrl: user.avatarUrl,
-                    coverImageUrl: user.coverImageUrl,
-                    bio: user.bio,
-                    isProfilePublic: user.isProfilePublic,
-                    role: user.role
-                }
+                user: toSafeUserResponse(userWithHandle)
             }
         });
     } catch (error) {
@@ -43,13 +46,13 @@ export async function getCurrentUser(req: Request, res: Response) {
 }
 
 // Update current authenticated user profile
-export async function updateUserProfile(req: Request, res: Response) {
+export async function updateUserProfile(req: AuthenticatedRequest, res: Response) {
     try {
         await connect();
 
-        const userId = (req as any).userId;
+        const userId = req.userId;
 
-        const files = (req as any).files as {
+        const files = req.files as {
           avatar?: Express.Multer.File[];
           cover?: Express.Multer.File[];
         } | undefined;
@@ -61,7 +64,7 @@ export async function updateUserProfile(req: Request, res: Response) {
 
         const { avatarUrl, coverImageUrl, bio, name } = req.body;
 
-        const updatePayload: any = {};
+        const updatePayload: ProfileUpdatePayload = {};
 
         // Handle uploaded files (preferred over raw URLs)
         if (files?.avatar?.[0]) {
@@ -97,19 +100,12 @@ export async function updateUserProfile(req: Request, res: Response) {
             return;
         }
 
+        const userWithHandle = await ensureUserHandle(updatedUser);
+
         res.status(200).json({
             error: null,
             data: {
-                user: {
-                    id: updatedUser._id,
-                    name: updatedUser.name,
-                    email: updatedUser.email,
-                    avatarUrl: updatedUser.avatarUrl,
-                    coverImageUrl: updatedUser.coverImageUrl,
-                    bio: updatedUser.bio,
-                    isProfilePublic: updatedUser.isProfilePublic,
-                    role: updatedUser.role
-                }
+                user: toSafeUserResponse(userWithHandle)
             }
         });
 

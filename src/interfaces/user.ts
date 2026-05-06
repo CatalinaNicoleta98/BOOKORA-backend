@@ -5,6 +5,8 @@ export interface User {
   name: string;
   email: string;
   password: string;
+  handle?: string;
+  handleLower?: string;
 
   // Optional profile fields
   avatarUrl?: string;

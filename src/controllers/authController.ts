@@ -10,7 +10,12 @@ import Joi, { ValidationResult } from "joi";
 import { userModel } from "../models/userModel";
 import { User } from "../interfaces/user";
 import { connect } from "../config/db";
+import { buildHandleFields, ensureUserHandle, generateAvailableHandle, validateReservedHandle } from "../services/userHandleService";
+import { toSafeUserResponse } from "../services/userResponseService";
 
+function isDuplicateKeyError(error: unknown): error is { code: number; keyPattern?: Record<string, number> } {
+    return typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000;
+}
 
 // Register a new user
 export async function registerUser(req: Request, res: Response) {
@@ -33,29 +38,78 @@ export async function registerUser(req: Request, res: Response) {
             return;
         }
 
+        const requestedHandle = typeof req.body.handle === "string" ? req.body.handle.trim() : undefined;
+
+        if (requestedHandle) {
+            const handleExists = await userModel.findOne({ handleLower: requestedHandle.toLowerCase() });
+
+            if (handleExists) {
+                res.status(400).json({ error: "Handle is already taken" });
+                return;
+            }
+        }
+
         // Hash the password
         const salt = await bcrypt.genSalt(10);
         const passwordHashed = await bcrypt.hash(req.body.password, salt);
 
-        // Create user object and save to database
-        const userObject = new userModel({
-            name: req.body.name,
-            email: req.body.email,
-            password: passwordHashed,
-            bio: req.body.bio,
-            isProfilePublic: req.body.isProfilePublic,
-            role: "user"
-        });
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const handleFields = requestedHandle
+                ? buildHandleFields(requestedHandle)
+                : await generateAvailableHandle({
+                    name: req.body.name,
+                    email: req.body.email
+                });
 
-        const savedUser = await userObject.save();
+            // Create user object and save to database
+            const userObject = new userModel({
+                name: req.body.name,
+                email: req.body.email,
+                password: passwordHashed,
+                handle: handleFields.handle,
+                handleLower: handleFields.handleLower,
+                bio: req.body.bio,
+                isProfilePublic: req.body.isProfilePublic,
+                role: "user"
+            });
 
-        res.status(201).json({
-            error: null,
-            data: {
-                id: savedUser._id,
-                message: "User registered successfully"
+            try {
+                const savedUser = await userObject.save();
+
+                res.status(201).json({
+                    error: null,
+                    data: {
+                        id: savedUser._id,
+                        message: "User registered successfully",
+                        user: toSafeUserResponse(savedUser)
+                    }
+                });
+                return;
+            } catch (error) {
+                if (!isDuplicateKeyError(error)) {
+                    throw error;
+                }
+
+                if (error.keyPattern?.email) {
+                    res.status(400).json({ error: "Email is already registered" });
+                    return;
+                }
+
+                if (error.keyPattern?.handleLower) {
+                    if (requestedHandle) {
+                        res.status(400).json({ error: "Handle is already taken" });
+                        return;
+                    }
+
+                    continue;
+                }
+
+                throw error;
             }
-        });
+        }
+
+        res.status(500).json({ error: "Could not generate a unique handle" });
+        return;
 
     } catch (error) {
         res.status(500).send("Error registering user. Error: " + error);
@@ -77,7 +131,7 @@ export async function loginUser(req: Request, res: Response) {
         await connect();
 
         // Check if user exists
-        const user: User | null = await userModel.findOne({ email: req.body.email });
+        const user = await userModel.findOne({ email: req.body.email });
 
         if (!user) {
             res.status(400).json({ error: "Email or password is incorrect" });
@@ -92,6 +146,7 @@ export async function loginUser(req: Request, res: Response) {
             return;
         }
 
+        const userWithHandle = await ensureUserHandle(user);
         const jwtSecret = process.env.TOKEN_SECRET;
 
         if (!jwtSecret) {
@@ -99,15 +154,15 @@ export async function loginUser(req: Request, res: Response) {
             return;
         }
 
-        const userId: string = user._id;
+        const userId: string = userWithHandle._id.toString();
 
         // Create and assign token
         const token: string = jwt.sign(
             {
                 userId,
-                name: user.name,
-                email: user.email,
-                role: user.role
+                name: userWithHandle.name,
+                email: userWithHandle.email,
+                role: userWithHandle.role
             },
             jwtSecret,
             { expiresIn: "2h" }
@@ -120,16 +175,7 @@ export async function loginUser(req: Request, res: Response) {
                 data: {
                     userId,
                     token,
-                    user: {
-                        id: user._id,
-                        name: user.name,
-                        email: user.email,
-                        avatarUrl: user.avatarUrl,
-                        coverImageUrl: user.coverImageUrl,
-                        bio: user.bio,
-                        isProfilePublic: user.isProfilePublic,
-                        role: user.role
-                    }
+                    user: toSafeUserResponse(userWithHandle)
                 }
             });
 
@@ -145,6 +191,15 @@ export function validateUserRegistration(data: User): ValidationResult {
         name: Joi.string().min(2).max(100).required(),
         email: Joi.string().email().min(6).max(255).required(),
         password: Joi.string().min(6).max(20).required(),
+        handle: Joi.string()
+            .trim()
+            .pattern(/^[A-Za-z0-9_]{3,30}$/)
+            .custom(validateReservedHandle)
+            .messages({
+                "string.pattern.base": "Handle must be 3-30 characters and use only letters, numbers, or underscores",
+                "any.invalid": "Handle is reserved"
+            })
+            .optional(),
         avatarUrl: Joi.string().allow("", null),
         coverImageUrl: Joi.string().allow("", null),
         bio: Joi.string().max(500).allow("", null),
