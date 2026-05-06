@@ -48,8 +48,11 @@ export interface LibraryEntry {
 
   rating?: number; // 0.5 – 5 (half-step)
 
+  // Public review text. This may appear in community reviews and future public/social views.
   reviewText?: string;
   isSpoiler?: boolean;
+
+  // Private personal notes. This must never be exposed in public/community/social responses.
   notes?: string;
 
   dateStarted?: Date;

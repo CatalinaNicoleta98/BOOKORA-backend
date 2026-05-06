@@ -155,6 +155,7 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
       }
     },
 
+    // Public review text. This may appear in community reviews and future public/social views.
     reviewText: {
       type: String,
       trim: true,
@@ -166,6 +167,7 @@ const LibraryEntrySchema = new Schema<LibraryEntryDocument>(
       default: false
     },
 
+    // Private personal notes. This must never be returned in public/community/social responses.
     notes: {
       type: String,
       trim: true,
