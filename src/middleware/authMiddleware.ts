@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import { envConfig } from '../config/env';
 
 interface AuthTokenPayload extends JwtPayload {
     userId: string;
@@ -23,14 +24,8 @@ function decodeUserIdFromRequest(req: Request): string | null {
         return null;
     }
 
-    const jwtSecret = process.env.TOKEN_SECRET;
-
-    if (!jwtSecret) {
-        throw new Error('Server configuration error.');
-    }
-
     try {
-        const decodedToken = jwt.verify(token, jwtSecret) as AuthTokenPayload;
+        const decodedToken = jwt.verify(token, envConfig.tokenSecret) as AuthTokenPayload;
 
         if (!decodedToken.userId) {
             return null;

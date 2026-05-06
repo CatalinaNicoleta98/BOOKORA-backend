@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { envConfig } from "./env";
 
 export async function testConnection(){
     try {
@@ -19,10 +20,7 @@ export async function connect(){
     }
 
     try {
-        if(!process.env.DBHOST){
-            throw new Error("DBHOST is not defined in environment variables");
-        }
-        await mongoose.connect(process.env.DBHOST);
+        await mongoose.connect(envConfig.dbHost);
 
         if(mongoose.connection.db){
             await mongoose.connection.db.admin().command({ping: 1});
