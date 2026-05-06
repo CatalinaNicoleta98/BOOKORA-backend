@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { getOpenLibraryBookById, searchOpenLibraryBooks } from "../services/openLibraryService";
 import LibraryEntryModel from "../models/libraryEntryModel";
+import { userModel } from "../models/userModel";
+import { ensureUserHandle } from "../services/userHandleService";
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -17,10 +19,36 @@ interface PublicReviewAggregate {
   updatedAt?: Date;
   createdAt?: Date;
   user?: {
+    id?: unknown;
     name?: string;
     avatarUrl?: string;
+    handle?: string;
+    handleLower?: string;
   };
 }
+
+interface PublicReviewAuthor {
+  id?: string;
+  name: string;
+  avatarUrl?: string;
+  handle?: string;
+}
+
+const normalizeAggregateId = (value: unknown): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "object" && value !== null && "toString" in value) {
+    return value.toString();
+  }
+
+  return undefined;
+};
 
 const getBookCommunityRating = async (externalBookId: string) => {
   const [ratingSummaries, reviewsCount] = await Promise.all([
@@ -94,23 +122,77 @@ const getBookCommunityReviews = async (externalBookId: string) => {
         updatedAt: 1,
         createdAt: 1,
         user: {
+          id: "$user._id",
           name: "$user.name",
-          avatarUrl: "$user.avatarUrl"
+          avatarUrl: "$user.avatarUrl",
+          handle: "$user.handle",
+          handleLower: "$user.handleLower"
         }
       }
     }
   ]);
 
-  return reviews.map((review) => ({
+  const usersMissingHandle = reviews
+    .map((review) => normalizeAggregateId(review.user?.id))
+    .filter((userId): userId is string => typeof userId === "string" && Boolean(userId))
+    .filter((userId, index, userIds) => userIds.indexOf(userId) === index);
+
+  const hydratedUsers = await userModel.find({
+    _id: { $in: usersMissingHandle }
+  });
+
+  const userMap = new Map(
+    hydratedUsers.map((user) => [user._id.toString(), user])
+  );
+
+  const reviewAuthors = new Map<string, PublicReviewAuthor>();
+
+  for (const review of reviews) {
+    const reviewUserId = normalizeAggregateId(review.user?.id);
+
+    if (!reviewUserId || reviewAuthors.has(reviewUserId)) {
+      continue;
+    }
+
+    const hydratedUser = userMap.get(reviewUserId);
+
+    if (hydratedUser) {
+      const ensuredUser = await ensureUserHandle(hydratedUser);
+
+      reviewAuthors.set(reviewUserId, {
+        id: ensuredUser._id.toString(),
+        name: ensuredUser.name.trim() || "Bookora Reader",
+        avatarUrl: ensuredUser.avatarUrl,
+        handle: ensuredUser.handle
+      });
+      continue;
+    }
+
+    reviewAuthors.set(reviewUserId, {
+      id: reviewUserId,
+      name: review.user?.name?.trim() || "Bookora Reader",
+      avatarUrl: review.user?.avatarUrl,
+      handle: review.user?.handle
+    });
+  }
+
+  return reviews.map((review) => {
+    const reviewUserId = normalizeAggregateId(review.user?.id);
+    const author = reviewUserId ? reviewAuthors.get(reviewUserId) : undefined;
+
+    return {
+      author,
     id: String(review._id),
-    userName: review.user?.name?.trim() || "Bookora Reader",
-    avatarUrl: review.user?.avatarUrl,
+    userName: author?.name || review.user?.name?.trim() || "Bookora Reader",
+    avatarUrl: author?.avatarUrl || review.user?.avatarUrl,
+    handle: author?.handle ?? review.user?.handle,
     rating: typeof review.rating === "number" ? review.rating : 0,
     content: review.reviewText?.trim() || "",
     createdAt: (review.updatedAt || review.createdAt || new Date()).toISOString(),
     source: "bookora" as const,
     isSpoiler: review.isSpoiler ?? false
-  }));
+    };
+  });
 };
 
 export const getBookById = async (req: Request, res: Response) => {
