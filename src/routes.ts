@@ -3,6 +3,7 @@ import authRoutes from './routes/authRoutes';
 import libraryEntryRoutes from './routes/libraryEntryRoutes';
 import bookRoutes from './routes/bookRoutes';
 import profileRoutes from './routes/profileRoutes';
+import readerRoutes from './routes/readerRoutes';
 
 const router: Router = Router();
 
@@ -14,6 +15,7 @@ router.get('/', (req: Request, res: Response) => {
 // Mount auth routes
 router.use('/auth', authRoutes);
 router.use('/users', profileRoutes);
+router.use('/readers', readerRoutes);
 router.use('/library', libraryEntryRoutes);
 router.use('/books', bookRoutes);
 
