@@ -13,7 +13,6 @@ interface PublicReviewAggregate {
   _id: unknown;
   rating?: number;
   reviewText?: string;
-  notes?: string;
   isSpoiler?: boolean;
   updatedAt?: Date;
   createdAt?: Date;
@@ -44,7 +43,7 @@ const getBookCommunityRating = async (externalBookId: string) => {
     LibraryEntryModel.countDocuments({
       bookSource: "open_library",
       externalBookId,
-      notes: { $regex: /\S/ }
+      reviewText: { $regex: /\S/ }
     })
   ]);
 
@@ -63,10 +62,7 @@ const getBookCommunityReviews = async (externalBookId: string) => {
       $match: {
         bookSource: "open_library",
         externalBookId,
-        $or: [
-          { reviewText: { $regex: /\S/ } },
-          { notes: { $regex: /\S/ } }
-        ]
+        reviewText: { $regex: /\S/ }
       }
     },
     {
@@ -94,7 +90,6 @@ const getBookCommunityReviews = async (externalBookId: string) => {
         _id: 1,
         rating: 1,
         reviewText: 1,
-        notes: 1,
         isSpoiler: 1,
         updatedAt: 1,
         createdAt: 1,
@@ -111,7 +106,7 @@ const getBookCommunityReviews = async (externalBookId: string) => {
     userName: review.user?.name?.trim() || "Bookora Reader",
     avatarUrl: review.user?.avatarUrl,
     rating: typeof review.rating === "number" ? review.rating : 0,
-    content: review.reviewText?.trim() || review.notes?.trim() || "",
+    content: review.reviewText?.trim() || "",
     createdAt: (review.updatedAt || review.createdAt || new Date()).toISOString(),
     source: "bookora" as const,
     isSpoiler: review.isSpoiler ?? false
