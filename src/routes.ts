@@ -4,6 +4,7 @@ import libraryEntryRoutes from './routes/libraryEntryRoutes';
 import bookRoutes from './routes/bookRoutes';
 import profileRoutes from './routes/profileRoutes';
 import readerRoutes from './routes/readerRoutes';
+import followRoutes from './routes/followRoutes';
 
 const router: Router = Router();
 
@@ -16,6 +17,7 @@ router.get('/', (req: Request, res: Response) => {
 router.use('/auth', authRoutes);
 router.use('/users', profileRoutes);
 router.use('/readers', readerRoutes);
+router.use('/follows', followRoutes);
 router.use('/library', libraryEntryRoutes);
 router.use('/books', bookRoutes);
 

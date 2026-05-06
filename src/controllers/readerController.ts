@@ -1,8 +1,28 @@
-import type { Request, Response } from "express";
-import { getPublicReaderProfile } from "../services/publicReaderProfileService";
+import type { Response } from "express";
+import { connect } from "../config/db";
+import type { AuthenticatedRequest } from "../middleware/authMiddleware";
+import {
+  getPublicReaderFollowersByHandle,
+  getPublicReaderFollowingByHandle,
+  getPublicReaderProfile
+} from "../services/publicReaderProfileService";
 
-export async function getReaderProfileByHandle(req: Request, res: Response) {
+function getSingleRouteParam(value: string | string[] | undefined): string | undefined {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    return value[0]?.trim();
+  }
+
+  return undefined;
+}
+
+export async function getReaderProfileByHandle(req: AuthenticatedRequest, res: Response) {
   try {
+    await connect();
+
     const rawHandle = Array.isArray(req.params.handle) ? req.params.handle[0] : req.params.handle;
     const handle = rawHandle?.trim();
 
@@ -10,7 +30,7 @@ export async function getReaderProfileByHandle(req: Request, res: Response) {
       return res.status(404).json({ error: "Reader not found" });
     }
 
-    const profile = await getPublicReaderProfile(handle);
+    const profile = await getPublicReaderProfile(handle, req.userId);
 
     if (!profile) {
       return res.status(404).json({ error: "Reader not found" });
@@ -24,6 +44,66 @@ export async function getReaderProfileByHandle(req: Request, res: Response) {
     return res.status(500).json({
       error: "READER_PROFILE_FAILED",
       message: error instanceof Error ? error.message : "Failed to fetch reader profile"
+    });
+  }
+}
+
+export async function getReaderFollowersByHandle(req: AuthenticatedRequest, res: Response) {
+  try {
+    await connect();
+
+    const handle = getSingleRouteParam(req.params.handle);
+
+    if (!handle) {
+      return res.status(404).json({ error: "Reader not found" });
+    }
+
+    const followers = await getPublicReaderFollowersByHandle(handle);
+
+    if (!followers) {
+      return res.status(404).json({ error: "Reader not found" });
+    }
+
+    return res.status(200).json({
+      error: null,
+      data: {
+        followers
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "READER_FOLLOWERS_FAILED",
+      message: error instanceof Error ? error.message : "Failed to fetch followers"
+    });
+  }
+}
+
+export async function getReaderFollowingByHandle(req: AuthenticatedRequest, res: Response) {
+  try {
+    await connect();
+
+    const handle = getSingleRouteParam(req.params.handle);
+
+    if (!handle) {
+      return res.status(404).json({ error: "Reader not found" });
+    }
+
+    const following = await getPublicReaderFollowingByHandle(handle);
+
+    if (!following) {
+      return res.status(404).json({ error: "Reader not found" });
+    }
+
+    return res.status(200).json({
+      error: null,
+      data: {
+        following
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "READER_FOLLOWING_FAILED",
+      message: error instanceof Error ? error.message : "Failed to fetch following"
     });
   }
 }
