@@ -1,13 +1,10 @@
 import express, { Application } from 'express';
-import dotenvFlow from 'dotenv-flow';
 import routes from './routes';
 import { testConnection } from './config/db';
 import cors from 'cors';
+import { envConfig } from './config/env';
 
 import path from 'path';
-
-
-dotenvFlow.config();
 
 //create express application
 const app: Application = express();
@@ -16,7 +13,7 @@ const app: Application = express();
 
 function setupCors() {
     app.use(cors({
-        origin: ['http://localhost:5173', 'http://localhost:5174'],
+        origin: envConfig.corsOrigins,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
         allowedHeaders: ['Authorization', 'auth-token', 'Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
         credentials: true
@@ -33,7 +30,7 @@ setupCors();
 app.use('/api', routes);
 
 export function startServer(){
-   const PORT: number = parseInt(process.env.PORT as string) || 4000;
+   const PORT: number = envConfig.port;
 
     app.listen(PORT, function(){
         console.log("Server is up and running on port:" + PORT);

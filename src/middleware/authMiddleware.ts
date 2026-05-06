@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import { envConfig } from '../config/env';
 
 interface AuthTokenPayload extends JwtPayload {
     userId: string;
@@ -9,40 +10,85 @@ interface AuthenticatedRequest extends Request {
     userId?: string;
 }
 
+function extractToken(req: Request): string | undefined {
+    const authHeader = req.header('Authorization');
+    return authHeader?.startsWith('Bearer ')
+        ? authHeader.replace('Bearer ', '').trim()
+        : req.header('auth-token');
+}
+
+function decodeUserIdFromRequest(req: Request): string | null {
+    const token = extractToken(req);
+
+    if (!token) {
+        return null;
+    }
+
+    try {
+        const decodedToken = jwt.verify(token, envConfig.tokenSecret) as AuthTokenPayload;
+
+        if (!decodedToken.userId) {
+            return null;
+        }
+
+        return decodedToken.userId;
+    } catch {
+        return null;
+    }
+}
+
 export const verifyToken = (
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction,
 ): void => {
-    const authHeader = req.header('Authorization');
-    const token = authHeader?.startsWith('Bearer ')
-        ? authHeader.replace('Bearer ', '').trim()
-        : req.header('auth-token');
+    const token = extractToken(req);
 
     if (!token) {
         res.status(401).json({ message: 'Access denied. No token provided.' });
         return;
     }
 
-    const jwtSecret = process.env.TOKEN_SECRET;
-
-    if (!jwtSecret) {
-        res.status(500).json({ message: 'Server configuration error.' });
-        return;
-    }
-
     try {
-        const decodedToken = jwt.verify(token, jwtSecret) as AuthTokenPayload;
+        const userId = decodeUserIdFromRequest(req);
 
-        if (!decodedToken.userId) {
-            res.status(401).json({ message: 'Invalid token payload.' });
+        if (!userId) {
+            res.status(401).json({ message: 'Invalid or expired token.' });
             return;
         }
 
-        req.userId = decodedToken.userId;
+        req.userId = userId;
         next();
     } catch (error) {
+        if (error instanceof Error && error.message === 'Server configuration error.') {
+            res.status(500).json({ message: 'Server configuration error.' });
+            return;
+        }
+
         res.status(401).json({ message: 'Invalid or expired token.' });
+    }
+};
+
+export const attachOptionalUser = (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+): void => {
+    try {
+        const userId = decodeUserIdFromRequest(req);
+
+        if (userId) {
+            req.userId = userId;
+        }
+
+        next();
+    } catch (error) {
+        if (error instanceof Error && error.message === 'Server configuration error.') {
+            res.status(500).json({ message: 'Server configuration error.' });
+            return;
+        }
+
+        next();
     }
 };
 

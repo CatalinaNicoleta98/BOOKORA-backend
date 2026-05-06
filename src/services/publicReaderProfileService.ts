@@ -1,9 +1,11 @@
 import type { ReadingStatus } from "../interfaces/libraryEntry";
 import type { HydratedDocument } from "mongoose";
 import LibraryEntryModel, { type LibraryEntryDocument } from "../models/libraryEntryModel";
+import { followModel } from "../models/followModel";
 import { userModel } from "../models/userModel";
 import type { User } from "../interfaces/user";
 import { ensureUserHandle } from "./userHandleService";
+import { getReaderFollowers, getReaderFollowing, type PublicReaderCard } from "./followService";
 
 const PUBLIC_ACTIVITY_LIMIT = 10;
 const PUBLIC_SPOTLIGHT_LIMIT = 6;
@@ -36,6 +38,10 @@ interface PublicReaderResponse {
     coverImageUrl?: string;
     bio?: string;
     isProfilePublic?: boolean;
+    followerCount: number;
+    followingCount: number;
+    isFollowing: boolean;
+    isOwnProfile: boolean;
   };
   summary: {
     booksInLibrary: number;
@@ -148,15 +154,27 @@ function buildEmptyShelves(): Record<ReadingStatus, number> {
   };
 }
 
-export async function getPublicReaderProfile(handle: string): Promise<PublicReaderResponse | null> {
+export async function getPublicReaderProfile(
+  handle: string,
+  viewerUserId?: string
+): Promise<PublicReaderResponse | null> {
   const user = await getPublicReaderByHandle(handle);
 
   if (!user) {
     return null;
   }
 
-  const entries = await LibraryEntryModel.find({ userId: user._id }).sort({ updatedAt: -1, createdAt: -1 });
+  const [entries, followerCount, followingCount, viewerFollowRecord] = await Promise.all([
+    LibraryEntryModel.find({ userId: user._id }).sort({ updatedAt: -1, createdAt: -1 }),
+    followModel.countDocuments({ followingId: user._id }),
+    followModel.countDocuments({ followerId: user._id }),
+    viewerUserId
+      ? followModel.findOne({ followerId: viewerUserId, followingId: user._id }).select("_id")
+      : Promise.resolve(null)
+  ]);
   const shelves = buildEmptyShelves();
+  const isOwnProfile = viewerUserId === user._id.toString();
+  const isFollowing = isOwnProfile ? false : Boolean(viewerFollowRecord);
 
   let finishedCount = 0;
   let inProgressCount = 0;
@@ -220,7 +238,11 @@ export async function getPublicReaderProfile(handle: string): Promise<PublicRead
       avatarUrl: user.avatarUrl,
       coverImageUrl: user.coverImageUrl,
       bio: user.bio,
-      isProfilePublic: user.isProfilePublic
+      isProfilePublic: user.isProfilePublic,
+      followerCount,
+      followingCount,
+      isFollowing,
+      isOwnProfile
     },
     summary: {
       booksInLibrary: entries.length,
@@ -232,4 +254,24 @@ export async function getPublicReaderProfile(handle: string): Promise<PublicRead
     recentActivity,
     spotlight
   };
+}
+
+export async function getPublicReaderFollowersByHandle(handle: string): Promise<PublicReaderCard[] | null> {
+  const user = await getPublicReaderByHandle(handle);
+
+  if (!user) {
+    return null;
+  }
+
+  return getReaderFollowers(user._id.toString());
+}
+
+export async function getPublicReaderFollowingByHandle(handle: string): Promise<PublicReaderCard[] | null> {
+  const user = await getPublicReaderByHandle(handle);
+
+  if (!user) {
+    return null;
+  }
+
+  return getReaderFollowing(user._id.toString());
 }

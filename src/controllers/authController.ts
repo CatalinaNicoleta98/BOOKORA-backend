@@ -12,6 +12,7 @@ import { User } from "../interfaces/user";
 import { connect } from "../config/db";
 import { buildHandleFields, ensureUserHandle, generateAvailableHandle, validateReservedHandle } from "../services/userHandleService";
 import { toSafeUserResponse } from "../services/userResponseService";
+import { envConfig } from "../config/env";
 
 function isDuplicateKeyError(error: unknown): error is { code: number; keyPattern?: Record<string, number> } {
     return typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000;
@@ -147,13 +148,6 @@ export async function loginUser(req: Request, res: Response) {
         }
 
         const userWithHandle = await ensureUserHandle(user);
-        const jwtSecret = process.env.TOKEN_SECRET;
-
-        if (!jwtSecret) {
-            res.status(500).json({ error: "TOKEN_SECRET is not defined" });
-            return;
-        }
-
         const userId: string = userWithHandle._id.toString();
 
         // Create and assign token
@@ -164,7 +158,7 @@ export async function loginUser(req: Request, res: Response) {
                 email: userWithHandle.email,
                 role: userWithHandle.role
             },
-            jwtSecret,
+            envConfig.tokenSecret,
             { expiresIn: "2h" }
         );
 
