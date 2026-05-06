@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import LibraryEntryModel from "../models/libraryEntryModel";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 
+const MAX_TEXT_LENGTH = 5000;
+
 const normalizeReadingSessions = (
   readingSessions?: Array<{ dateStarted?: string; dateFinished?: string }>
 ) => {
@@ -13,6 +15,40 @@ const normalizeReadingSessions = (
   return readingSessions.filter(
     (session) => Boolean(session?.dateStarted) || Boolean(session?.dateFinished)
   );
+};
+
+type SanitizedTextFieldResult =
+  | { ok: true; value: string | undefined }
+  | { ok: false; message: string };
+
+const sanitizeOptionalTextField = (
+  fieldName: "reviewText" | "notes",
+  value: unknown
+): SanitizedTextFieldResult => {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+
+  if (typeof value !== "string") {
+    return {
+      ok: false,
+      message: `${fieldName} must be a string`
+    };
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length > MAX_TEXT_LENGTH) {
+    return {
+      ok: false,
+      message: `${fieldName} must be ${MAX_TEXT_LENGTH} characters or fewer`
+    };
+  }
+
+  return {
+    ok: true,
+    value: trimmedValue
+  };
 };
 
 // CREATE library entry
@@ -48,6 +84,16 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       progressMax,
       progressUnit
     } = req.body;
+
+    const sanitizedReviewText = sanitizeOptionalTextField("reviewText", reviewText);
+    if (!sanitizedReviewText.ok) {
+      return res.status(400).json({ message: sanitizedReviewText.message });
+    }
+
+    const sanitizedNotes = sanitizeOptionalTextField("notes", notes);
+    if (!sanitizedNotes.ok) {
+      return res.status(400).json({ message: sanitizedNotes.message });
+    }
 
     // basic source validation
     if (bookSource === "open_library" && !externalBookId) {
@@ -98,9 +144,9 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       formats,
       customLists,
       rating,
-      reviewText,
+      reviewText: sanitizedReviewText.value,
       isSpoiler,
-      notes,
+      notes: sanitizedNotes.value,
       dateStarted: latestReadingSession?.dateStarted ?? dateStarted,
       dateFinished: latestReadingSession?.dateFinished ?? dateFinished,
       readingSessions: normalizedReadingSessions,
@@ -159,15 +205,25 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       progressUnit
     } = req.body;
 
+    const sanitizedReviewText = sanitizeOptionalTextField("reviewText", reviewText);
+    if (!sanitizedReviewText.ok) {
+      return res.status(400).json({ message: sanitizedReviewText.message });
+    }
+
+    const sanitizedNotes = sanitizeOptionalTextField("notes", notes);
+    if (!sanitizedNotes.ok) {
+      return res.status(400).json({ message: sanitizedNotes.message });
+    }
+
     const update: Record<string, unknown> = {};
     if (status !== undefined) update.status = status;
     if (format !== undefined) update.format = format; // legacy
     if (formats !== undefined) update.formats = formats;
     if (customLists !== undefined) update.customLists = customLists;
     if (rating !== undefined) update.rating = rating;
-    if (reviewText !== undefined) update.reviewText = reviewText;
+    if (sanitizedReviewText.value !== undefined) update.reviewText = sanitizedReviewText.value;
     if (isSpoiler !== undefined) update.isSpoiler = isSpoiler;
-    if (notes !== undefined) update.notes = notes;
+    if (sanitizedNotes.value !== undefined) update.notes = sanitizedNotes.value;
     const normalizedReadingSessions = normalizeReadingSessions(readingSessions);
     const latestReadingSession =
       normalizedReadingSessions && normalizedReadingSessions.length > 0
