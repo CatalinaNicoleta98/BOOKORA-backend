@@ -397,6 +397,23 @@ const getNormalizedExcerptList = (excerpts?: OpenLibraryExcerpt[]) => {
     .filter((value): value is string => Boolean(value));
 };
 
+const getPrimaryEditionCoverUrl = (editionEntries: OpenLibraryWorkEditionEntry[]) => {
+  const coverId = editionEntries.find((edition) => Array.isArray(edition.covers) && edition.covers[0])
+    ?.covers?.[0];
+
+  return getCoverUrl(coverId);
+};
+
+const getDetailDescription = (work: OpenLibraryWorkResponse) => {
+  const description = getNormalizedTextValue(work.description);
+
+  if (description) {
+    return description;
+  }
+
+  return getNormalizedExcerptList(work.excerpts)[0];
+};
+
 const getSimilarBookSubjects = (subjects?: string[]) =>
   getNormalizedStringList(subjects)
     .filter((subject) => !subject.toLowerCase().startsWith("series:"))
@@ -868,8 +885,8 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
       source: "open_library",
       externalBookId: normalizedWorkId,
       title: work.title,
-      description: getNormalizedTextValue(work.description),
-      cover: getCoverUrl(work.covers?.[0]),
+      description: getDetailDescription(work),
+      cover: getCoverUrl(work.covers?.[0]) ?? getPrimaryEditionCoverUrl(editionEntries),
       authors,
       firstPublishDate: work.first_publish_date,
       publishedYear: work.first_publish_date ? Number.parseInt(work.first_publish_date, 10) || undefined : undefined,
