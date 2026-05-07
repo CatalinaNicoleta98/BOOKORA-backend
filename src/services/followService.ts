@@ -5,7 +5,9 @@ import { ensureUserHandle } from "./userHandleService";
 
 export interface FollowMutationResult {
   targetUserId: string;
-  isFollowing: boolean;
+  following: boolean;
+  followerCount: number;
+  followingCount: number;
 }
 
 export interface PublicReaderCard {
@@ -56,9 +58,16 @@ export async function followUser(
     }
   );
 
+  const [followerCount, followingCount] = await Promise.all([
+    followModel.countDocuments({ followingId: followingObjectId }),
+    followModel.countDocuments({ followerId: followerObjectId })
+  ]);
+
   return {
     targetUserId,
-    isFollowing: true
+    following: true,
+    followerCount,
+    followingCount
   };
 }
 
@@ -88,9 +97,18 @@ export async function unfollowUser(
     followingId: new mongoose.Types.ObjectId(targetUserId)
   });
 
+  const followerObjectId = new mongoose.Types.ObjectId(actorUserId);
+  const followingObjectId = new mongoose.Types.ObjectId(targetUserId);
+  const [followerCount, followingCount] = await Promise.all([
+    followModel.countDocuments({ followingId: followingObjectId }),
+    followModel.countDocuments({ followerId: followerObjectId })
+  ]);
+
   return {
     targetUserId,
-    isFollowing: false
+    following: false,
+    followerCount,
+    followingCount
   };
 }
 
