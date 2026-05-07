@@ -4,22 +4,16 @@
     "checkJs": true,
     "target": "es2016",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*"]
-    },
     "resolveJsonModule": true,
     "sourceMap": false,
     "rootDir": "./src",
     "outDir": "dist",
-    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": false,
     "strict": true,
     "noImplicitAny": true,
     "skipLibCheck": true
   },
-  "include": ["./src"],
-  "exclude": ["node_modules/**/*"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
