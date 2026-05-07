@@ -2,6 +2,7 @@ import { Response } from "express";
 import mongoose from "mongoose";
 import LibraryEntryModel from "../models/libraryEntryModel";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
+import { createActivityFromLibraryEntryChange } from "../services/activityService";
 
 const MAX_TEXT_LENGTH = 5000;
 
@@ -49,6 +50,21 @@ const sanitizeOptionalTextField = (
     ok: true,
     value: trimmedValue
   };
+};
+
+const logActivityWarning = (
+  action: "create" | "update",
+  userId: string,
+  entryId: string,
+  error: unknown
+) => {
+  const message = error instanceof Error ? error.message : "Unknown activity error";
+
+  console.warn(`[activity] Failed to record library ${action} activity`, {
+    userId,
+    entryId,
+    message
+  });
 };
 
 // CREATE library entry
@@ -155,6 +171,16 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       progressUnit
     });
 
+    try {
+      await createActivityFromLibraryEntryChange({
+        actorUserId: userId,
+        before: null,
+        after: entry
+      });
+    } catch (activityError) {
+      logActivityWarning("create", userId, entry._id.toString(), activityError);
+    }
+
     res.status(201).json(entry);
   } catch (error) {
     res.status(500).json({ message: "Failed to create library entry", error });
@@ -215,6 +241,12 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ message: sanitizedNotes.message });
     }
 
+    const existingEntry = await LibraryEntryModel.findOne({ _id: id, userId });
+
+    if (!existingEntry) {
+      return res.status(404).json({ message: "Library entry not found" });
+    }
+
     const update: Record<string, unknown> = {};
     if (status !== undefined) update.status = status;
     if (format !== undefined) update.format = format; // legacy
@@ -248,6 +280,16 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     if (!entry) {
       return res.status(404).json({ message: "Library entry not found" });
+    }
+
+    try {
+      await createActivityFromLibraryEntryChange({
+        actorUserId: userId,
+        before: existingEntry,
+        after: entry
+      });
+    } catch (activityError) {
+      logActivityWarning("update", userId, entry._id.toString(), activityError);
     }
 
     res.status(200).json(entry);
