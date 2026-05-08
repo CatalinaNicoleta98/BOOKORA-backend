@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import axios from "axios";
-import { getOpenLibraryAuthorById } from "./openLibraryService";
+import { getOpenLibraryAuthorById } from "../../services/openLibraryService";
 
 const originalAxiosGet = axios.get;
 
@@ -99,5 +99,35 @@ test.describe("author grouping", () => {
 
     expect(result.seriesGroups).toHaveLength(0);
     expect(result.standaloneBooks.map((book) => book.key)).toEqual(["OL3W", "OL4W"]);
+  });
+
+  test("deduplicates repeated work entries by work key before building author groups", async () => {
+    axios.get = createAxiosGetMock({
+      "https://openlibrary.org/authors/OLAUTH3A.json": {
+        key: "/authors/OLAUTH3A",
+        name: "Duplicate Test Author",
+      },
+      "https://openlibrary.org/authors/OLAUTH3A/works.json?limit=40": {
+        entries: [
+          { key: "/works/OL10W", title: "Duplicate Match" },
+          { key: "/works/OL10W", title: "Duplicate Match Again" },
+        ],
+      },
+      "https://openlibrary.org/works/OL10W.json": {
+        key: "/works/OL10W",
+        title: "Duplicate Match",
+        first_publish_date: "2001",
+        authors: [],
+        series: "Red Rising",
+        series_position: "1",
+      },
+      "https://openlibrary.org/works/OL10W/editions.json": { entries: [] },
+    }) as typeof axios.get;
+
+    const result = await getOpenLibraryAuthorById("OLAUTH3A");
+
+    expect(result.seriesGroups).toHaveLength(1);
+    expect(result.seriesGroups[0].books.map((book) => book.key)).toEqual(["OL10W"]);
+    expect(result.standaloneBooks).toHaveLength(0);
   });
 });

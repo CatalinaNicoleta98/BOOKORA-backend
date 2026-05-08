@@ -3,7 +3,7 @@ import {
   buildSeriesKey,
   parseSeriesPositionForTitle,
   resolveSeriesMembership,
-} from "./openLibraryNormalization";
+} from "../../services/openLibraryNormalization";
 
 test.describe("series normalization", () => {
   test("vague subjects or unrelated labels do not create a usable series group", () => {
@@ -42,5 +42,18 @@ test.describe("series normalization", () => {
     });
 
     expect(parseSeriesPositionForTitle("A Court of Thorns and Roses #3", "Crescent City")).toBeUndefined();
+  });
+
+  test("consistent edition labels can produce a safe medium-confidence series match", () => {
+    expect(
+      resolveSeriesMembership({
+        editionSeriesValues: ["The Expanse #1", "The Expanse #1"],
+      })
+    ).toEqual({
+      confidence: "medium",
+      seriesTitle: "The Expanse",
+      seriesKey: buildSeriesKey("The Expanse"),
+      seriesPosition: "1",
+    });
   });
 });

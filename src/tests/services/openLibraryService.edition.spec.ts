@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import axios from "axios";
-import { getOpenLibraryBookById } from "./openLibraryService";
+import { getOpenLibraryBookById } from "../../services/openLibraryService";
 
 const originalAxiosGet = axios.get;
 
