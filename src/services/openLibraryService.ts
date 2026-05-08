@@ -1,4 +1,14 @@
 import axios from "axios";
+import {
+  buildSeriesKey,
+  getComparableSeriesPosition,
+  isEditionKey,
+  normalizeAuthorKey,
+  normalizeEditionKey,
+  normalizeWorkKey,
+  parseSeriesPositionForTitle,
+  resolveSeriesMembership,
+} from "./openLibraryNormalization";
 
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 const OPEN_LIBRARY_BASE_URL = "https://openlibrary.org";
@@ -391,9 +401,8 @@ const clampNumber = (value: number, minimum: number, maximum?: number) => {
   return value;
 };
 
-const getNormalizedWorkId = (key: string) => key.split("/").filter(Boolean).pop() || key;
-const getNormalizedEditionId = (key: string) => key.split("/").filter(Boolean).pop() || key;
-const isEditionId = (key: string) => /^OL\d+M$/i.test(getNormalizedWorkId(key));
+const getNormalizedWorkId = (key: string) => normalizeWorkKey(key);
+const getNormalizedEditionId = (key: string) => normalizeEditionKey(key);
 
 const getPrimaryIsbn = (isbns?: string[]) => {
   if (!Array.isArray(isbns) || isbns.length === 0) {
@@ -459,20 +468,14 @@ const getSeriesNameFromSubjects = (subjects?: string[]) => {
   return normalizedSeriesName.length > 0 ? normalizedSeriesName : undefined;
 };
 
-const getSeriesKeyFromName = (seriesName: string) =>
-  seriesName
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
 const getSeriesTitleFromKey = (seriesKey: string) =>
   seriesKey
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+const getSeriesKeyFromName = (seriesName: string) => buildSeriesKey(seriesName) ?? "";
 
-const getNormalizedAuthorId = (key: string) => key.replace(/^\/authors\//, "").trim();
+const getNormalizedAuthorId = (key: string) => normalizeAuthorKey(key);
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -555,25 +558,6 @@ const mapAuthorWorkToSummary = (work: OpenLibraryAuthorWorkEntry): SimilarBookSu
   coverUrl: getCoverUrl(work.covers?.[0]),
 });
 
-const getComparableSeriesPosition = (value?: string | number) => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const match = value.match(/(\d+(?:\.\d+)?)/);
-
-  if (!match?.[1]) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const numericValue = Number.parseFloat(match[1]);
-  return Number.isFinite(numericValue) ? numericValue : Number.POSITIVE_INFINITY;
-};
-
 const sortAuthorBooks = (left: AuthorBookCard, right: AuthorBookCard) => {
   const leftSeriesPosition = getComparableSeriesPosition(left.seriesPosition);
   const rightSeriesPosition = getComparableSeriesPosition(right.seriesPosition);
@@ -629,48 +613,6 @@ const mapAuthorNamesAndKeys = (
   }));
 };
 
-const getSeriesPositionFromEditionSeries = (
-  editionSeries: string[] | string | undefined,
-  seriesName: string
-) => {
-  const seriesValues = Array.isArray(editionSeries) ? editionSeries : editionSeries ? [editionSeries] : [];
-  const normalizedSeriesName = seriesName.trim();
-
-  if (!normalizedSeriesName) {
-    return undefined;
-  }
-
-  const seriesNamePattern = new RegExp(escapeRegExp(normalizedSeriesName), "i");
-
-  for (const rawSeriesValue of seriesValues) {
-    const normalizedSeriesValue = getNormalizedSingleString(rawSeriesValue);
-
-    if (!normalizedSeriesValue || !seriesNamePattern.test(normalizedSeriesValue)) {
-      continue;
-    }
-
-    const hashMatch = normalizedSeriesValue.match(/#\s*(\d+(?:\.\d+)?)/);
-
-    if (hashMatch?.[1]) {
-      return hashMatch[1];
-    }
-
-    const bookMatch = normalizedSeriesValue.match(/\bbook\s+(\d+(?:\.\d+)?)\b/i);
-
-    if (bookMatch?.[1]) {
-      return bookMatch[1];
-    }
-
-    const trailingNumberMatch = normalizedSeriesValue.match(/(?:^|[^\d])(\d+(?:\.\d+)?)\s*$/);
-
-    if (trailingNumberMatch?.[1]) {
-      return trailingNumberMatch[1];
-    }
-  }
-
-  return undefined;
-};
-
 const getSeriesPositionFromEditions = (
   editions: OpenLibraryWorkEditionEntry[],
   seriesName: string | undefined
@@ -680,7 +622,14 @@ const getSeriesPositionFromEditions = (
   }
 
   for (const edition of editions) {
-    const seriesPosition = getSeriesPositionFromEditionSeries(edition.series, seriesName);
+    const seriesValues = Array.isArray(edition.series)
+      ? edition.series
+      : edition.series
+      ? [edition.series]
+      : [];
+    const seriesPosition = seriesValues
+      .map((seriesValue) => parseSeriesPositionForTitle(seriesValue, seriesName))
+      .find((value): value is string => Boolean(value));
 
     if (seriesPosition) {
       return seriesPosition;
@@ -1340,7 +1289,7 @@ export const getOpenLibraryAuthorById = async (authorId: string): Promise<Author
 
 export const getOpenLibraryBookById = async (bookId: string): Promise<BookDetailResponse> => {
   const requestedBookId = getNormalizedWorkId(bookId);
-  const isEditionRequest = isEditionId(requestedBookId);
+  const isEditionRequest = isEditionKey(requestedBookId);
   const requestedEdition = isEditionRequest
     ? await getOpenLibraryEditionById(requestedBookId)
     : undefined;
