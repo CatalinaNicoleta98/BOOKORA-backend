@@ -105,11 +105,13 @@ export interface SimilarBookSummary {
 }
 
 export interface BookDetailEdition {
-  id: string;
+  editionKey: string;
+  workKey: string;
   title: string;
   coverUrl?: string;
   format?: string;
   publishDate?: string;
+  publishedYear?: number;
   publisher?: string;
   language?: string;
 }
@@ -187,6 +189,9 @@ export interface BookDetailReview {
 
 export interface BookDetailResponse {
   source: "open_library";
+  requestedKey: string;
+  workKey: string;
+  editionKey?: string;
   externalBookId: string;
   title: string;
   description?: string;
@@ -209,6 +214,7 @@ export interface BookDetailResponse {
   rating?: BookDetailRating;
   communityRating?: BookDetailCommunityRating;
   reviews?: BookDetailReview[];
+  selectedEdition?: BookDetailEdition;
   authorDetails?: BookDetailAuthorDetails;
   editions?: BookDetailEdition[];
   similarBooks?: SimilarBookSummary[];
@@ -307,6 +313,16 @@ interface OpenLibraryWorkEditionsResponse {
 
 interface OpenLibraryEditionResponse {
   works?: OpenLibraryReference[];
+  key?: string;
+  title?: string;
+  subtitle?: string;
+  covers?: number[];
+  physical_format?: string;
+  publish_date?: string;
+  publishers?: string[];
+  languages?: Array<{
+    key?: string;
+  }>;
 }
 
 interface OpenLibraryDetailFallbackDoc {
@@ -376,6 +392,7 @@ const clampNumber = (value: number, minimum: number, maximum?: number) => {
 };
 
 const getNormalizedWorkId = (key: string) => key.split("/").filter(Boolean).pop() || key;
+const getNormalizedEditionId = (key: string) => key.split("/").filter(Boolean).pop() || key;
 const isEditionId = (key: string) => /^OL\d+M$/i.test(getNormalizedWorkId(key));
 
 const getPrimaryIsbn = (isbns?: string[]) => {
@@ -474,6 +491,9 @@ const getNormalizedSingleString = (value?: string) => {
   const normalizedValue = value?.trim();
   return normalizedValue && normalizedValue.length > 0 ? normalizedValue : undefined;
 };
+
+const getNormalizedLanguageKey = (value?: string) =>
+  getNormalizedSingleString(value?.split("/").filter(Boolean).pop());
 
 const getFirstPublishYear = (value?: string) => {
   if (!value) {
@@ -769,6 +789,20 @@ const getOpenLibraryEditionWorkId = async (editionId: string) => {
   return workKey ? getNormalizedWorkId(workKey) : undefined;
 };
 
+const getOpenLibraryEditionById = async (editionId: string) => {
+  const response = await fetchOpenLibraryJson<OpenLibraryEditionResponse>(
+    `${OPEN_LIBRARY_BOOKS_URL}/${editionId}.json`,
+    OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+  );
+
+  const workKey = response.works?.[0]?.key;
+
+  return {
+    edition: response,
+    workKey: workKey ? getNormalizedWorkId(workKey) : undefined,
+  };
+};
+
 const isOpenLibraryRequestError = (error: unknown): error is OpenLibraryRequestError =>
   typeof error === "object" && error !== null;
 
@@ -873,12 +907,15 @@ const mapFallbackAuthorNames = (authorNames?: string[]): BookDetailAuthor[] => {
 };
 
 const mapFallbackBookDetail = (
+  requestedKey: string,
   normalizedWorkId: string,
   fallbackDoc: OpenLibraryDetailFallbackDoc,
   similarBooks: SimilarBookSummary[],
   editions: BookDetailEdition[]
 ): BookDetailResponse => ({
   source: "open_library",
+  requestedKey,
+  workKey: normalizedWorkId,
   externalBookId: normalizedWorkId,
   title: fallbackDoc.title,
   cover: getCoverUrl(fallbackDoc.cover_i),
@@ -898,15 +935,43 @@ const mapFallbackBookDetail = (
   similarBooks,
 });
 
-const mapEditionToSummary = (edition: OpenLibraryWorkEditionEntry): BookDetailEdition => ({
-  id: getNormalizedWorkId(edition.key),
+const mapEditionToSummary = (
+  edition: OpenLibraryWorkEditionEntry,
+  workKey: string
+): BookDetailEdition => ({
+  editionKey: getNormalizedEditionId(edition.key),
+  workKey,
   title: getNormalizedSingleString(edition.title) ?? "Edition",
   coverUrl: getCoverUrl(edition.covers?.[0]),
   format: getNormalizedSingleString(edition.physical_format),
   publishDate: getNormalizedSingleString(edition.publish_date),
+  publishedYear: getFirstPublishYear(edition.publish_date),
   publisher: getNormalizedSingleString(edition.publishers?.[0]),
-  language: getNormalizedSingleString(edition.languages?.[0]?.key?.split("/").filter(Boolean).pop()),
+  language: getNormalizedLanguageKey(edition.languages?.[0]?.key),
 });
+
+const mapEditionResponseToSummary = (
+  edition: OpenLibraryEditionResponse,
+  workKey: string,
+  fallbackEditionKey: string
+): BookDetailEdition => {
+  const titleParts = [
+    getNormalizedSingleString(edition.title),
+    getNormalizedSingleString(edition.subtitle),
+  ].filter(Boolean);
+
+  return {
+    editionKey: getNormalizedEditionId(edition.key ?? fallbackEditionKey),
+    workKey,
+    title: titleParts.join(": ") || "Edition",
+    coverUrl: getCoverUrl(edition.covers?.[0]),
+    format: getNormalizedSingleString(edition.physical_format),
+    publishDate: getNormalizedSingleString(edition.publish_date),
+    publishedYear: getFirstPublishYear(edition.publish_date),
+    publisher: getNormalizedSingleString(edition.publishers?.[0]),
+    language: getNormalizedLanguageKey(edition.languages?.[0]?.key),
+  };
+};
 
 const getAuthorDetails = async (
   author: BookDetailAuthor | undefined,
@@ -1273,10 +1338,14 @@ export const getOpenLibraryAuthorById = async (authorId: string): Promise<Author
 };
 
 
-export const getOpenLibraryBookById = async (workId: string): Promise<BookDetailResponse> => {
-  const requestedBookId = getNormalizedWorkId(workId);
-  const normalizedWorkId = isEditionId(requestedBookId)
-    ? (await getOpenLibraryEditionWorkId(requestedBookId)) ?? requestedBookId
+export const getOpenLibraryBookById = async (bookId: string): Promise<BookDetailResponse> => {
+  const requestedBookId = getNormalizedWorkId(bookId);
+  const isEditionRequest = isEditionId(requestedBookId);
+  const requestedEdition = isEditionRequest
+    ? await getOpenLibraryEditionById(requestedBookId)
+    : undefined;
+  const normalizedWorkId = isEditionRequest
+    ? requestedEdition?.workKey ?? requestedBookId
     : requestedBookId;
 
   try {
@@ -1332,21 +1401,35 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
 
     let editionEntries: OpenLibraryWorkEditionEntry[] = [];
     let editions: BookDetailEdition[] | undefined;
+    let selectedEdition: BookDetailEdition | undefined;
 
     try {
       editionEntries = await getOpenLibraryWorkEditions(normalizedWorkId);
       const mappedEditions = editionEntries
-        .map(mapEditionToSummary)
-        .filter((edition) => edition.id !== normalizedWorkId)
+        .map((edition) => mapEditionToSummary(edition, normalizedWorkId))
         .slice(0, 8);
 
       editions = mappedEditions.length ? mappedEditions : undefined;
+
+      if (requestedEdition?.edition) {
+        selectedEdition = mappedEditions.find(
+          (edition) => edition.editionKey === requestedBookId
+        );
+      }
     } catch (error: unknown) {
       console.error("Open Library editions fetch failed", {
         message: error instanceof Error ? error.message : "Unknown error",
         workId: normalizedWorkId,
         status: getRequestErrorStatus(error),
       });
+    }
+
+    if (requestedEdition?.edition && !selectedEdition) {
+      selectedEdition = mapEditionResponseToSummary(
+        requestedEdition.edition,
+        normalizedWorkId,
+        requestedBookId
+      );
     }
 
     let authorDetails: BookDetailAuthorDetails | undefined;
@@ -1394,12 +1477,18 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
 
     return {
       source: "open_library",
+      requestedKey: requestedBookId,
+      workKey: normalizedWorkId,
+      editionKey: selectedEdition?.editionKey,
       externalBookId: normalizedWorkId,
-      title: work.title,
+      title: selectedEdition?.title ?? work.title,
       description: getDetailDescription(work),
-      cover: getCoverUrl(work.covers?.[0]) ?? getPrimaryEditionCoverUrl(editionEntries),
+      cover:
+        selectedEdition?.coverUrl ??
+        getCoverUrl(work.covers?.[0]) ??
+        getPrimaryEditionCoverUrl(editionEntries),
       authors,
-      firstPublishDate: work.first_publish_date,
+      firstPublishDate: selectedEdition?.publishDate ?? work.first_publish_date,
       publishedYear: work.first_publish_date ? Number.parseInt(work.first_publish_date, 10) || undefined : undefined,
       subjects: getNormalizedStringList(work.subjects),
       subjectPeople: getNormalizedStringList(work.subject_people),
@@ -1414,6 +1503,7 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
       series,
       seriesPosition,
       reviews: [],
+      selectedEdition,
       authorDetails,
       editions,
       rating:
@@ -1442,7 +1532,7 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
 
           try {
             editions = (await getOpenLibraryWorkEditions(normalizedWorkId))
-              .map(mapEditionToSummary)
+              .map((edition) => mapEditionToSummary(edition, normalizedWorkId))
               .slice(0, 8);
           } catch (editionError: unknown) {
             console.error("Open Library fallback editions fetch failed", {
@@ -1452,7 +1542,7 @@ export const getOpenLibraryBookById = async (workId: string): Promise<BookDetail
             });
           }
 
-          return mapFallbackBookDetail(normalizedWorkId, fallbackDoc, similarBooks, editions);
+          return mapFallbackBookDetail(requestedBookId, normalizedWorkId, fallbackDoc, similarBooks, editions);
         }
       } catch (fallbackError: unknown) {
         console.error("Open Library fallback book detail fetch failed", {
