@@ -1421,21 +1421,15 @@ export const getOpenLibraryBookById = async (bookId: string): Promise<BookDetail
       });
     }
 
-    const seriesName = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
-    const series = seriesName
+    const seriesMembership = getWorkSeriesMembership(work, editionEntries);
+    const series = seriesMembership.seriesTitle &&
+      (seriesMembership.confidence === "high" || seriesMembership.confidence === "medium")
       ? {
-          key: getSeriesKeyFromName(seriesName),
-          name: seriesName,
+          key: seriesMembership.seriesKey!,
+          name: seriesMembership.seriesTitle,
         }
       : undefined;
-
-    const seriesPositionFromWork =
-      typeof work.series_position === "number"
-        ? String(work.series_position)
-        : typeof work.series_position === "string" && work.series_position.trim().length > 0
-        ? work.series_position.trim()
-        : undefined;
-    const seriesPosition = seriesPositionFromWork ?? getSeriesPositionFromEditions(editionEntries, seriesName);
+    const seriesPosition = seriesMembership.seriesPosition;
 
     const ratingAverage =
       typeof work.rating?.average === "number"
