@@ -7,6 +7,7 @@ import readerRoutes from './routes/readerRoutes';
 import followRoutes from './routes/followRoutes';
 import feedRoutes from './routes/feedRoutes';
 import authorRoutes from './routes/authorRoutes';
+import seriesRoutes from './routes/seriesRoutes';
 
 const router: Router = Router();
 
@@ -24,5 +25,6 @@ router.use('/feed', feedRoutes);
 router.use('/library', libraryEntryRoutes);
 router.use('/books', bookRoutes);
 router.use('/authors', authorRoutes);
+router.use('/series', seriesRoutes);
 
 export default router;
