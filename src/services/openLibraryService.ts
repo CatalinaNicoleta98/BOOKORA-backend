@@ -1023,8 +1023,8 @@ const getSeriesSearchQueries = (seriesTitle: string) => {
   }
 
   return [
-    `subject:"series:${normalizedSeriesTitle}"`,
     `"${normalizedSeriesTitle}"`,
+    normalizedSeriesTitle,
   ];
 };
 
@@ -1102,10 +1102,23 @@ export const getOpenLibrarySeriesByKey = async (seriesKey: string): Promise<Seri
         `${OPEN_LIBRARY_WORKS_URL}/${normalizedWorkId}.json`,
         OPEN_LIBRARY_DETAIL_TIMEOUT_MS
       );
+      let editions: OpenLibraryWorkEditionEntry[] = [];
+
+      try {
+        editions = await getOpenLibraryWorkEditions(normalizedWorkId);
+      } catch (error: unknown) {
+        console.error("Open Library series work editions fetch failed", {
+          message: error instanceof Error ? error.message : "Unknown error",
+          seriesKey: normalizedSeriesKey,
+          workKey: doc.key,
+          status: getRequestErrorStatus(error),
+        });
+      }
 
       return {
         doc,
         work,
+        editions,
       };
     })
   );
@@ -1123,39 +1136,24 @@ export const getOpenLibrarySeriesByKey = async (seriesKey: string): Promise<Seri
       continue;
     }
 
-    const { doc, work } = result.value;
-    const seriesTitle = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
+    const { doc, work, editions } = result.value;
+    const seriesMembership = getWorkSeriesMembership(work, editions);
 
-    if (!seriesTitle || getSeriesKeyFromName(seriesTitle) !== normalizedSeriesKey) {
+    if (
+      !seriesMembership.seriesTitle ||
+      !seriesMembership.seriesKey ||
+      seriesMembership.seriesKey !== normalizedSeriesKey ||
+      (seriesMembership.confidence !== "high" && seriesMembership.confidence !== "medium")
+    ) {
       continue;
     }
 
-    canonicalSeriesTitle = canonicalSeriesTitle ?? seriesTitle;
-
-    let editionEntries: OpenLibraryWorkEditionEntry[] = [];
-
-    try {
-      editionEntries = await getOpenLibraryWorkEditions(getNormalizedWorkId(work.key));
-    } catch (error: unknown) {
-      console.error("Open Library series editions fetch failed", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        seriesKey: normalizedSeriesKey,
-        workKey: work.key,
-        status: getRequestErrorStatus(error),
-      });
-    }
-
-    const position =
-      typeof work.series_position === "number"
-        ? work.series_position
-        : getNormalizedSingleString(
-            typeof work.series_position === "string" ? work.series_position : undefined
-          ) ?? getSeriesPositionFromEditions(editionEntries, seriesTitle);
+    canonicalSeriesTitle = canonicalSeriesTitle ?? seriesMembership.seriesTitle;
 
     matchingCandidates.push({
       doc,
       work,
-      position,
+      position: seriesMembership.seriesPosition,
     });
   }
 
