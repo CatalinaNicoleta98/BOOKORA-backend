@@ -27,6 +27,7 @@ const OPEN_LIBRARY_SEARCH_FIELDS = [
   "key",
   "title",
   "author_name",
+  "author_key",
   "cover_i",
   "first_publish_year",
   "isbn",
@@ -50,6 +51,7 @@ export interface BookSearchResult {
   externalBookId: string;
   title: string;
   author?: string;
+  authorKey?: string;
   cover?: string;
   publishedYear?: number;
   isbn?: string;
@@ -108,6 +110,38 @@ export interface BookDetailAuthorDetails {
   bio?: string;
   photoUrl?: string;
   topWorks?: SimilarBookSummary[];
+}
+
+export interface AuthorBookCard {
+  key: string;
+  title: string;
+  coverUrl?: string;
+  firstPublishYear?: number;
+  description?: string;
+  seriesTitle?: string;
+  seriesPosition?: string | number;
+}
+
+export interface AuthorSeriesGroup {
+  seriesKey: string;
+  seriesTitle: string;
+  books: AuthorBookCard[];
+}
+
+export interface AuthorDetailsResponse {
+  key: string;
+  name: string;
+  photoUrl?: string;
+  bio?: string;
+  birthDate?: string;
+  deathDate?: string;
+  topSubjects: string[];
+  links: {
+    openLibrary?: string;
+    wikipedia?: string;
+  };
+  seriesGroups: AuthorSeriesGroup[];
+  standaloneBooks: AuthorBookCard[];
 }
 
 export interface BookDetailReview {
@@ -200,6 +234,13 @@ interface OpenLibraryAuthorResponse {
   bio?: string | OpenLibraryTextValue;
   photos?: number[];
   name?: string;
+  birth_date?: string;
+  death_date?: string;
+  wikipedia?: string;
+  links?: Array<{
+    title?: string;
+    url?: string;
+  }>;
 }
 
 interface OpenLibraryEditionDoc {
@@ -253,6 +294,7 @@ interface OpenLibrarySearchDoc {
   key: string;
   title: string;
   author_name?: string[];
+  author_key?: string[];
   cover_i?: number;
   first_publish_year?: number;
   isbn?: string[];
@@ -369,6 +411,8 @@ const getSeriesKeyFromName = (seriesName: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+const getNormalizedAuthorId = (key: string) => key.replace(/^\/authors\//, "").trim();
+
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const getNormalizedStringList = (values?: string[]) => {
@@ -385,6 +429,21 @@ const getNormalizedStringList = (values?: string[]) => {
 const getNormalizedSingleString = (value?: string) => {
   const normalizedValue = value?.trim();
   return normalizedValue && normalizedValue.length > 0 ? normalizedValue : undefined;
+};
+
+const getFirstPublishYear = (value?: string) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value.match(/\b(\d{4})\b/);
+
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const year = Number.parseInt(match[1], 10);
+  return Number.isFinite(year) ? year : undefined;
 };
 
 const getNormalizedExcerptList = (excerpts?: OpenLibraryExcerpt[]) => {
@@ -431,6 +490,68 @@ const mapAuthorWorkToSummary = (work: OpenLibraryAuthorWorkEntry): SimilarBookSu
   title: work.title,
   coverUrl: getCoverUrl(work.covers?.[0]),
 });
+
+const getComparableSeriesPosition = (value?: string | number) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const match = value.match(/(\d+(?:\.\d+)?)/);
+
+  if (!match?.[1]) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const numericValue = Number.parseFloat(match[1]);
+  return Number.isFinite(numericValue) ? numericValue : Number.POSITIVE_INFINITY;
+};
+
+const sortAuthorBooks = (left: AuthorBookCard, right: AuthorBookCard) => {
+  const leftSeriesPosition = getComparableSeriesPosition(left.seriesPosition);
+  const rightSeriesPosition = getComparableSeriesPosition(right.seriesPosition);
+
+  if (leftSeriesPosition !== rightSeriesPosition) {
+    return leftSeriesPosition - rightSeriesPosition;
+  }
+
+  const leftYear = left.firstPublishYear ?? Number.POSITIVE_INFINITY;
+  const rightYear = right.firstPublishYear ?? Number.POSITIVE_INFINITY;
+
+  if (leftYear !== rightYear) {
+    return leftYear - rightYear;
+  }
+
+  return left.title.localeCompare(right.title);
+};
+
+const getOpenLibraryUrl = (key?: string) => {
+  if (!key) {
+    return undefined;
+  }
+
+  return `${OPEN_LIBRARY_BASE_URL}${key.startsWith("/") ? key : `/${key}`}`;
+};
+
+const getWikipediaLink = (author: OpenLibraryAuthorResponse) => {
+  const wikipediaUrl = getNormalizedSingleString(author.wikipedia);
+
+  if (wikipediaUrl) {
+    return wikipediaUrl;
+  }
+
+  const matchingLink = author.links?.find((link) => {
+    const normalizedUrl = getNormalizedSingleString(link.url)?.toLowerCase();
+    const normalizedTitle = getNormalizedSingleString(link.title)?.toLowerCase();
+
+    return normalizedUrl?.includes("wikipedia.org") || normalizedTitle?.includes("wikipedia");
+  });
+
+  return getNormalizedSingleString(matchingLink?.url);
+};
 
 const getSeriesPositionFromEditionSeries = (
   editionSeries: string[] | string | undefined,
@@ -621,9 +742,9 @@ const getOpenLibraryDetailFallback = async (workId: string) => {
   return response.docs?.[0];
 };
 
-const getOpenLibraryAuthorWorks = async (authorId: string) => {
+const getOpenLibraryAuthorWorks = async (authorId: string, limit = 40) => {
   const response = await fetchOpenLibraryJson<OpenLibraryAuthorWorksResponse>(
-    `${OPEN_LIBRARY_AUTHORS_URL}/${authorId}/works.json?limit=6`,
+    `${OPEN_LIBRARY_AUTHORS_URL}/${authorId}/works.json?limit=${limit}`,
     OPEN_LIBRARY_DETAIL_TIMEOUT_MS
   );
 
@@ -741,7 +862,7 @@ const getAuthorDetails = async (
 
   const [authorResponse, authorWorks] = await Promise.all([
     fetchOpenLibraryJson<OpenLibraryAuthorResponse>(
-      `${OPEN_LIBRARY_AUTHORS_URL}/${author.key}.json`,
+      `${OPEN_LIBRARY_AUTHORS_URL}/${getNormalizedAuthorId(author.key)}.json`,
       OPEN_LIBRARY_DETAIL_TIMEOUT_MS
     ),
     getOpenLibraryAuthorWorks(author.key),
@@ -758,6 +879,164 @@ const getAuthorDetails = async (
     bio: getNormalizedTextValue(authorResponse.bio),
     photoUrl: authorResponse.photos?.length ? getPhotoUrl(author.key) : undefined,
     topWorks: topWorks.length ? topWorks : undefined,
+  };
+};
+
+const mapWorkToAuthorBookCard = (
+  work: OpenLibraryWorkResponse,
+  fallbackEntry?: OpenLibraryAuthorWorkEntry
+): AuthorBookCard => {
+  const seriesTitle = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
+  const seriesPosition =
+    typeof work.series_position === "number"
+      ? work.series_position
+      : getNormalizedSingleString(
+          typeof work.series_position === "string" ? work.series_position : undefined
+        );
+
+  return {
+    key: getNormalizedWorkId(work.key),
+    title: getNormalizedSingleString(work.title) ?? fallbackEntry?.title ?? "Untitled work",
+    coverUrl: getCoverUrl(work.covers?.[0] ?? fallbackEntry?.covers?.[0]),
+    firstPublishYear: getFirstPublishYear(work.first_publish_date),
+    description: getDetailDescription(work),
+    seriesTitle,
+    seriesPosition,
+  };
+};
+
+const getTopAuthorSubjects = (workResponses: OpenLibraryWorkResponse[]) => {
+  const subjectFrequency = new Map<string, number>();
+
+  for (const work of workResponses) {
+    for (const subject of getNormalizedStringList(work.subjects)) {
+      if (subject.toLowerCase().startsWith("series:")) {
+        continue;
+      }
+
+      subjectFrequency.set(subject, (subjectFrequency.get(subject) ?? 0) + 1);
+    }
+  }
+
+  return [...subjectFrequency.entries()]
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0]);
+    })
+    .slice(0, 8)
+    .map(([subject]) => subject);
+};
+
+export const getOpenLibraryAuthorById = async (authorId: string): Promise<AuthorDetailsResponse> => {
+  const normalizedAuthorId = getNormalizedAuthorId(authorId);
+
+  if (!normalizedAuthorId) {
+    throw new Error("Author key is required.");
+  }
+
+  const [authorResponse, authorWorks] = await Promise.all([
+    fetchOpenLibraryJson<OpenLibraryAuthorResponse>(
+      `${OPEN_LIBRARY_AUTHORS_URL}/${normalizedAuthorId}.json`,
+      OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+    ),
+    getOpenLibraryAuthorWorks(normalizedAuthorId),
+  ]);
+
+  const uniqueEntries = authorWorks.filter((entry, index, entries) => {
+    const normalizedWorkId = getNormalizedWorkId(entry.key);
+
+    return entries.findIndex((candidate) => getNormalizedWorkId(candidate.key) === normalizedWorkId) === index;
+  });
+
+  const detailedWorks = await Promise.allSettled(
+    uniqueEntries.map(async (entry) => {
+      const normalizedWorkId = getNormalizedWorkId(entry.key);
+      const work = await fetchOpenLibraryJson<OpenLibraryWorkResponse>(
+        `${OPEN_LIBRARY_WORKS_URL}/${normalizedWorkId}.json`,
+        OPEN_LIBRARY_DETAIL_TIMEOUT_MS
+      );
+
+      return {
+        entry,
+        work,
+      };
+    })
+  );
+
+  const standaloneBooks: AuthorBookCard[] = [];
+  const seriesGroupsMap = new Map<string, AuthorSeriesGroup>();
+  const successfulWorkResponses: OpenLibraryWorkResponse[] = [];
+
+  detailedWorks.forEach((result, index) => {
+    if (result.status !== "fulfilled") {
+      const fallbackEntry = uniqueEntries[index];
+
+      console.error("Open Library author work detail fetch failed", {
+        message: result.reason instanceof Error ? result.reason.message : "Unknown error",
+        authorId: normalizedAuthorId,
+        workKey: fallbackEntry?.key,
+        status: getRequestErrorStatus(result.reason),
+      });
+
+      standaloneBooks.push({
+        key: getNormalizedWorkId(fallbackEntry.key),
+        title: fallbackEntry.title,
+        coverUrl: getCoverUrl(fallbackEntry.covers?.[0]),
+      });
+      return;
+    }
+
+    const { entry, work } = result.value;
+    successfulWorkResponses.push(work);
+
+    const book = mapWorkToAuthorBookCard(work, entry);
+
+    if (book.seriesTitle) {
+      const seriesKey = getSeriesKeyFromName(book.seriesTitle);
+      const existingGroup = seriesGroupsMap.get(seriesKey);
+
+      if (existingGroup) {
+        existingGroup.books.push(book);
+      } else {
+        seriesGroupsMap.set(seriesKey, {
+          seriesKey,
+          seriesTitle: book.seriesTitle,
+          books: [book],
+        });
+      }
+
+      return;
+    }
+
+    standaloneBooks.push(book);
+  });
+
+  const seriesGroups = [...seriesGroupsMap.values()]
+    .map((group) => ({
+      ...group,
+      books: [...group.books].sort(sortAuthorBooks),
+    }))
+    .sort((left, right) => left.seriesTitle.localeCompare(right.seriesTitle));
+
+  const sortedStandaloneBooks = [...standaloneBooks].sort(sortAuthorBooks);
+
+  return {
+    key: normalizedAuthorId,
+    name: getNormalizedSingleString(authorResponse.name) ?? "Unknown author",
+    photoUrl: authorResponse.photos?.length ? getPhotoUrl(normalizedAuthorId) : undefined,
+    bio: getNormalizedTextValue(authorResponse.bio),
+    birthDate: getNormalizedSingleString(authorResponse.birth_date),
+    deathDate: getNormalizedSingleString(authorResponse.death_date),
+    topSubjects: getTopAuthorSubjects(successfulWorkResponses),
+    links: {
+      openLibrary: getOpenLibraryUrl(authorResponse.key ?? `/authors/${normalizedAuthorId}`),
+      wikipedia: getWikipediaLink(authorResponse),
+    },
+    seriesGroups,
+    standaloneBooks: sortedStandaloneBooks,
   };
 };
 
@@ -1031,6 +1310,7 @@ export const searchOpenLibraryBooks = async (
       externalBookId: getNormalizedWorkId(doc.key),
       title: doc.title,
       author: doc.author_name?.[0],
+      authorKey: doc.author_key?.[0] ? getNormalizedAuthorId(doc.author_key[0]) : undefined,
       cover: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : undefined,
       publishedYear: doc.first_publish_year,
       isbn: getPrimaryIsbn(doc.isbn),
