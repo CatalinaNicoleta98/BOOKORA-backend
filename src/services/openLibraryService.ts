@@ -639,6 +639,25 @@ const getSeriesPositionFromEditions = (
   return undefined;
 };
 
+const getEditionSeriesValues = (editions: OpenLibraryWorkEditionEntry[]) =>
+  editions.flatMap((edition) =>
+    Array.isArray(edition.series)
+      ? edition.series
+      : edition.series
+      ? [edition.series]
+      : []
+  );
+
+const getWorkSeriesMembership = (
+  work: OpenLibraryWorkResponse,
+  editions: OpenLibraryWorkEditionEntry[]
+) =>
+  resolveSeriesMembership({
+    explicitSeries: getFirstSeriesName(work.series),
+    explicitPosition: work.series_position,
+    editionSeriesValues: getEditionSeriesValues(editions),
+  });
+
 const delay = async (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -954,15 +973,10 @@ const getAuthorDetails = async (
 
 const mapWorkToAuthorBookCard = (
   work: OpenLibraryWorkResponse,
+  editions: OpenLibraryWorkEditionEntry[],
   fallbackEntry?: OpenLibraryAuthorWorkEntry
-): AuthorBookCard => {
-  const seriesTitle = getFirstSeriesName(work.series) ?? getSeriesNameFromSubjects(work.subjects);
-  const seriesPosition =
-    typeof work.series_position === "number"
-      ? work.series_position
-      : getNormalizedSingleString(
-          typeof work.series_position === "string" ? work.series_position : undefined
-        );
+): AuthorBookCard & { seriesConfidence: "high" | "medium" | "low" | "none" } => {
+  const seriesMembership = getWorkSeriesMembership(work, editions);
 
   return {
     key: getNormalizedWorkId(work.key),
@@ -970,8 +984,9 @@ const mapWorkToAuthorBookCard = (
     coverUrl: getCoverUrl(work.covers?.[0] ?? fallbackEntry?.covers?.[0]),
     firstPublishYear: getFirstPublishYear(work.first_publish_date),
     description: getDetailDescription(work),
-    seriesTitle,
-    seriesPosition,
+    seriesTitle: seriesMembership.seriesTitle,
+    seriesPosition: seriesMembership.seriesPosition,
+    seriesConfidence: seriesMembership.confidence,
   };
 };
 
@@ -1204,10 +1219,23 @@ export const getOpenLibraryAuthorById = async (authorId: string): Promise<Author
         `${OPEN_LIBRARY_WORKS_URL}/${normalizedWorkId}.json`,
         OPEN_LIBRARY_DETAIL_TIMEOUT_MS
       );
+      let editions: OpenLibraryWorkEditionEntry[] = [];
+
+      try {
+        editions = await getOpenLibraryWorkEditions(normalizedWorkId);
+      } catch (error: unknown) {
+        console.error("Open Library author work editions fetch failed", {
+          message: error instanceof Error ? error.message : "Unknown error",
+          authorId: normalizedAuthorId,
+          workKey: entry.key,
+          status: getRequestErrorStatus(error),
+        });
+      }
 
       return {
         entry,
         work,
+        editions,
       };
     })
   );
@@ -1235,29 +1263,30 @@ export const getOpenLibraryAuthorById = async (authorId: string): Promise<Author
       return;
     }
 
-    const { entry, work } = result.value;
+    const { entry, work, editions } = result.value;
     successfulWorkResponses.push(work);
 
-    const book = mapWorkToAuthorBookCard(work, entry);
+    const book = mapWorkToAuthorBookCard(work, editions, entry);
+    const { seriesConfidence, ...publicBook } = book;
 
-    if (book.seriesTitle) {
-      const seriesKey = getSeriesKeyFromName(book.seriesTitle);
+    if (publicBook.seriesTitle && (seriesConfidence === "high" || seriesConfidence === "medium")) {
+      const seriesKey = getSeriesKeyFromName(publicBook.seriesTitle);
       const existingGroup = seriesGroupsMap.get(seriesKey);
 
       if (existingGroup) {
-        existingGroup.books.push(book);
+        existingGroup.books.push(publicBook);
       } else {
         seriesGroupsMap.set(seriesKey, {
           seriesKey,
-          seriesTitle: book.seriesTitle,
-          books: [book],
+          seriesTitle: publicBook.seriesTitle,
+          books: [publicBook],
         });
       }
 
       return;
     }
 
-    standaloneBooks.push(book);
+    standaloneBooks.push(publicBook);
   });
 
   const seriesGroups = [...seriesGroupsMap.values()]
