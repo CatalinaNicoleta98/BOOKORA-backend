@@ -18,7 +18,7 @@
     "build": "rm -rf ./dist && tsc",
     "start": "node dist/index.js",
     "dev": "nodemon",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "playwright test"
   },
   "nodemonConfig": {
     "verbose": false,
@@ -35,9 +35,9 @@
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
-    "@types/multer": "^2.0.0",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
@@ -54,6 +54,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/axios": "^0.9.36",
     "@types/express": "^5.0.6",
     "@types/joi": "^17.2.2",
