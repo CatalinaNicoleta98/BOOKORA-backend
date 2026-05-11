@@ -470,10 +470,15 @@ const getSeriesNameFromSubjects = (subjects?: string[]) => {
 
 const getSeriesTitleFromKey = (seriesKey: string) =>
   seriesKey
+    .replace(/^\/series\//, "")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-const getSeriesKeyFromName = (seriesName: string) => buildSeriesKey(seriesName) ?? "";
+const getSeriesKeyFromName = (seriesName: string) => {
+  const normalizedSeriesKey = buildSeriesKey(seriesName);
+
+  return normalizedSeriesKey?.trim() ?? "";
+};
 
 const getNormalizedAuthorId = (key: string) => normalizeAuthorKey(key);
 
@@ -1142,9 +1147,12 @@ export const getOpenLibrarySeriesByKey = async (seriesKey: string): Promise<Seri
     if (
       !seriesMembership.seriesTitle ||
       !seriesMembership.seriesKey ||
-      seriesMembership.seriesKey !== normalizedSeriesKey ||
-      (seriesMembership.confidence !== "high" && seriesMembership.confidence !== "medium")
+      seriesMembership.seriesKey !== normalizedSeriesKey
     ) {
+      continue;
+    }
+
+    if (seriesMembership.confidence === "none") {
       continue;
     }
 
@@ -1370,7 +1378,7 @@ export const getOpenLibraryBookById = async (bookId: string): Promise<BookDetail
       .filter((author): author is OpenLibraryAuthorResponse => Boolean(author?.name))
       .map((author) => ({
         name: author.name!.trim(),
-        key: author.key ? getNormalizedWorkId(author.key) : undefined,
+        key: author.key ? getNormalizedAuthorId(author.key) : undefined,
       }));
 
     const similarBooks = await getSimilarBooksBySubjects(work.subjects, normalizedWorkId);
@@ -1423,9 +1431,10 @@ export const getOpenLibraryBookById = async (bookId: string): Promise<BookDetail
 
     const seriesMembership = getWorkSeriesMembership(work, editionEntries);
     const series = seriesMembership.seriesTitle &&
-      (seriesMembership.confidence === "high" || seriesMembership.confidence === "medium")
+      seriesMembership.seriesKey &&
+      seriesMembership.confidence !== "none"
       ? {
-          key: seriesMembership.seriesKey!,
+          key: seriesMembership.seriesKey,
           name: seriesMembership.seriesTitle,
         }
       : undefined;
