@@ -14,19 +14,41 @@ const normalizeTrimmed = (value?: string) => {
 
 const normalizeSpaces = (value: string) => value.replace(/\s+/g, " ").trim();
 
-export const normalizeOpenLibraryKey = (key: string) =>
-  normalizeSpaces(key.split("/").filter(Boolean).pop() || key);
+export const normalizeOpenLibraryKey = (key?: string | null) => {
+  if (!key) {
+    return "";
+  }
 
-export const normalizeWorkKey = (key: string) => normalizeOpenLibraryKey(key);
+  const normalizedKey = key.trim();
 
-export const normalizeEditionKey = (key: string) => normalizeOpenLibraryKey(key);
+  if (!normalizedKey) {
+    return "";
+  }
 
-export const normalizeAuthorKey = (key: string) =>
-  normalizeSpaces(key.replace(/^\/authors\//, ""));
+  return normalizeSpaces(normalizedKey.split("/").filter(Boolean).pop() || normalizedKey);
+};
 
-export const isEditionKey = (key: string) => /^OL\d+M$/i.test(normalizeEditionKey(key));
+export const normalizeWorkKey = (key?: string | null) => normalizeOpenLibraryKey(key);
 
-export const isWorkKey = (key: string) => /^OL\d+W$/i.test(normalizeWorkKey(key));
+export const normalizeEditionKey = (key?: string | null) => normalizeOpenLibraryKey(key);
+
+export const normalizeAuthorKey = (key?: string | null) => {
+  if (!key) {
+    return "";
+  }
+
+  const normalizedKey = key.trim();
+
+  if (!normalizedKey) {
+    return "";
+  }
+
+  return normalizeSpaces(normalizedKey.replace(/^\/authors\//, ""));
+};
+
+export const isEditionKey = (key?: string | null) => /^OL\d+M$/i.test(normalizeEditionKey(key));
+
+export const isWorkKey = (key?: string | null) => /^OL\d+W$/i.test(normalizeWorkKey(key));
 
 export const canonicalizeSeriesTitle = (value?: string) => {
   const normalizedValue = normalizeTrimmed(value);
