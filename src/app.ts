@@ -3,6 +3,8 @@ import routes from './routes';
 import { testConnection } from './config/db';
 import cors from 'cors';
 import { envConfig } from './config/env';
+import swaggerUi from 'swagger-ui-express';
+import { openApiDocument } from './docs/openapi';
 
 import path from 'path';
 
@@ -27,6 +29,13 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // Setup CORS middleware before routes
 setupCors();
 
+app.get('/docs/openapi.json', (_req, res) => {
+    res.status(200).json(openApiDocument);
+});
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument, {
+    explorer: true,
+    customSiteTitle: 'BOOKORA API Docs'
+}));
 app.use('/api', routes);
 
 export function startServer(){
