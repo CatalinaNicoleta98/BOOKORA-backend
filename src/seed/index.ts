@@ -8,6 +8,7 @@ import { getSeedConfig } from "./services/seedConfig";
 import { createDemoFollows } from "./services/seedFollowService";
 import { createDemoLibraryEntries } from "./services/seedLibraryService";
 import { clearDemoSeedData } from "./services/seedResetService";
+import { logSeedSummary } from "./services/seedSummaryService";
 import { createDemoUsers } from "./services/seedUserService";
 
 async function runSeed(): Promise<void> {
@@ -32,7 +33,7 @@ async function runSeed(): Promise<void> {
   await createDemoLibraryEntries(demoUserLibraries, userIdsByKey, resolvedBooksByKey);
 
   console.log("Bookora demo seed completed.");
-  console.log(`Demo password for all seeded accounts: ${DEMO_SEED_PASSWORD}`);
+  logSeedSummary(resolvedBooksByKey, DEMO_SEED_PASSWORD);
 }
 
 void runSeed()
