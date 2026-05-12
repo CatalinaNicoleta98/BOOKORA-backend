@@ -18,7 +18,9 @@
     "build": "rm -rf ./dist && tsc",
     "start": "node dist/index.js",
     "dev": "nodemon",
-    "test": "playwright test"
+    "test": "playwright test",
+    "seed:demo": "cross-env ENABLE_DEMO_SEEDER=true SEED_SCENARIO=demo SEED_MODE=reset ts-node ./src/seed/index.ts",
+    "seed:demo:clear": "cross-env ENABLE_DEMO_SEEDER=true SEED_SCENARIO=demo SEED_MODE=clear ts-node ./src/seed/index.ts"
   },
   "nodemonConfig": {
     "verbose": false,
