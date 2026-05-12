@@ -202,6 +202,51 @@ export const paths = {
       }
     }
   },
+  "/readers/search": {
+    get: {
+      tags: ["Readers"],
+      summary: "Search public readers by handle",
+      description: "Searches public reader accounts by handle, with name matches included as a secondary fallback. Exact and prefix handle matches are ranked first.",
+      parameters: [
+        {
+          name: "q",
+          in: "query",
+          required: true,
+          schema: { type: "string" },
+          description: "Reader handle or partial handle to search for.",
+          example: "catalina"
+        },
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 20, default: 10 },
+          description: "Maximum number of reader results to return."
+        }
+      ],
+      responses: {
+        "200": {
+          description: "Reader search results",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ReaderSearchResponse" }
+            }
+          }
+        },
+        "400": {
+          description: "Missing search query",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "500": {
+          description: "Server error"
+        }
+      }
+    }
+  },
   "/readers/{handle}/followers": {
     get: {
       tags: ["Readers"],

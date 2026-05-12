@@ -9,6 +9,8 @@ import { getReaderFollowers, getReaderFollowing, type PublicReaderCard } from ".
 
 const PUBLIC_ACTIVITY_LIMIT = 10;
 const PUBLIC_SPOTLIGHT_LIMIT = 6;
+const DEFAULT_READER_SEARCH_LIMIT = 10;
+const MAX_READER_SEARCH_LIMIT = 20;
 
 const SHELF_STATUSES: ReadingStatus[] = [
   "want_to_read",
@@ -67,6 +69,10 @@ interface PublicReaderResponse {
     isSpoiler?: boolean;
     book: PublicBookSnapshot;
   }>;
+}
+
+export interface PublicReaderSearchResult extends PublicReaderCard {
+  matchField: "handle" | "name";
 }
 
 function buildPublicBookSnapshot(entry: LibraryEntryDocument): PublicBookSnapshot {
@@ -152,6 +158,58 @@ function buildEmptyShelves(): Record<ReadingStatus, number> {
     on_break: 0,
     did_not_finish: 0
   };
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function clampSearchLimit(limit?: number): number {
+  if (!Number.isFinite(limit) || !limit || limit < 1) {
+    return DEFAULT_READER_SEARCH_LIMIT;
+  }
+
+  return Math.min(MAX_READER_SEARCH_LIMIT, Math.floor(limit));
+}
+
+function getReaderSearchScore(user: HydratedDocument<User>, normalizedQuery: string): number {
+  const handle = user.handle?.toLowerCase() || "";
+  const name = user.name.trim().toLowerCase();
+
+  if (handle === normalizedQuery) {
+    return 0;
+  }
+
+  if (handle.startsWith(normalizedQuery)) {
+    return 1;
+  }
+
+  if (name === normalizedQuery) {
+    return 2;
+  }
+
+  if (name.startsWith(normalizedQuery)) {
+    return 3;
+  }
+
+  if (handle.includes(normalizedQuery)) {
+    return 4;
+  }
+
+  return 5;
+}
+
+function getSearchMatchField(
+  user: HydratedDocument<User>,
+  normalizedQuery: string
+): "handle" | "name" {
+  const handle = user.handle?.toLowerCase() || "";
+
+  if (handle.includes(normalizedQuery)) {
+    return "handle";
+  }
+
+  return "name";
 }
 
 export async function getPublicReaderProfile(
@@ -274,4 +332,55 @@ export async function getPublicReaderFollowingByHandle(handle: string): Promise<
   }
 
   return getReaderFollowing(user._id.toString());
+}
+
+export async function searchPublicReaders(
+  query: string,
+  limit?: number
+): Promise<PublicReaderSearchResult[]> {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const searchLimit = clampSearchLimit(limit);
+  const searchRegex = new RegExp(escapeRegex(normalizedQuery), "i");
+  const candidateUsers = await userModel
+    .find({
+      isProfilePublic: true,
+      $or: [
+        { handleLower: { $regex: searchRegex } },
+        { name: { $regex: searchRegex } }
+      ]
+    })
+    .sort({ handleLower: 1, name: 1 })
+    .limit(searchLimit * 3);
+
+  const ensuredUsers: HydratedDocument<User>[] = [];
+
+  for (const user of candidateUsers) {
+    ensuredUsers.push(await ensureUserHandle(user));
+  }
+
+  return ensuredUsers
+    .sort((left, right) => {
+      const scoreDifference =
+        getReaderSearchScore(left, normalizedQuery) - getReaderSearchScore(right, normalizedQuery);
+
+      if (scoreDifference !== 0) {
+        return scoreDifference;
+      }
+
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, searchLimit)
+    .map((user) => ({
+      id: user._id.toString(),
+      handle: user.handle,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio,
+      matchField: getSearchMatchField(user, normalizedQuery)
+    }));
 }

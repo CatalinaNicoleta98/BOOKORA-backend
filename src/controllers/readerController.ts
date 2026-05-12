@@ -4,7 +4,8 @@ import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 import {
   getPublicReaderFollowersByHandle,
   getPublicReaderFollowingByHandle,
-  getPublicReaderProfile
+  getPublicReaderProfile,
+  searchPublicReaders
 } from "../services/publicReaderProfileService";
 
 function getSingleRouteParam(value: string | string[] | undefined): string | undefined {
@@ -104,6 +105,39 @@ export async function getReaderFollowingByHandle(req: AuthenticatedRequest, res:
     return res.status(500).json({
       error: "READER_FOLLOWING_FAILED",
       message: error instanceof Error ? error.message : "Failed to fetch following"
+    });
+  }
+}
+
+export async function searchReaders(req: AuthenticatedRequest, res: Response) {
+  try {
+    await connect();
+
+    const rawQuery = Array.isArray(req.query.q) ? req.query.q[0] : req.query.q;
+    const q = typeof rawQuery === "string" ? rawQuery.trim() : "";
+    const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+    const limit = typeof rawLimit === "string" ? Number(rawLimit) : undefined;
+
+    if (!q) {
+      return res.status(400).json({
+        error: "INVALID_READER_SEARCH",
+        message: "Query parameter q is required"
+      });
+    }
+
+    const readers = await searchPublicReaders(q, limit);
+
+    return res.status(200).json({
+      error: null,
+      data: {
+        readers,
+        query: q
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "READER_SEARCH_FAILED",
+      message: error instanceof Error ? error.message : "Failed to search readers"
     });
   }
 }

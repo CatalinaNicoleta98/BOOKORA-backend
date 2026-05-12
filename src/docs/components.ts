@@ -140,6 +140,36 @@ export const components = {
       },
       required: ["id", "name"]
     },
+    ReaderSearchResult: {
+      type: "object",
+      properties: {
+        id: { type: "string", example: "6820cc0db9f0cb815d969cb3" },
+        handle: { type: "string", example: "catalina_reads" },
+        name: { type: "string", example: "Catalina" },
+        avatarUrl: { type: "string", example: "/uploads/profiles/avatar-123.png" },
+        bio: { type: "string", example: "Fantasy lover and note-taker." },
+        matchField: { type: "string", enum: ["handle", "name"], example: "handle" }
+      },
+      required: ["id", "name", "matchField"]
+    },
+    ReaderSearchResponse: {
+      type: "object",
+      properties: {
+        error: { type: "null", example: null },
+        data: {
+          type: "object",
+          properties: {
+            query: { type: "string", example: "catalina" },
+            readers: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ReaderSearchResult" }
+            }
+          },
+          required: ["query", "readers"]
+        }
+      },
+      required: ["error", "data"]
+    },
     PublicBookSnapshot: {
       type: "object",
       properties: {
