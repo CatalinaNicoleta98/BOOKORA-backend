@@ -72,6 +72,15 @@ const userSchema = new Schema<User>({
   role: {
     type: String,
     default: "user"
+  },
+
+  passwordResetTokenHash: {
+    type: String,
+    trim: true
+  },
+
+  passwordResetExpiresAt: {
+    type: Date
   }
 }, {
   timestamps: true

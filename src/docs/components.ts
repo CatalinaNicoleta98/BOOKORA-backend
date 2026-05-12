@@ -87,6 +87,52 @@ export const components = {
       },
       required: ["email", "password"]
     },
+    ForgotPasswordRequest: {
+      type: "object",
+      properties: {
+        email: { type: "string", format: "email", example: "reader@example.com" }
+      },
+      required: ["email"]
+    },
+    ForgotPasswordResponse: {
+      type: "object",
+      properties: {
+        error: { type: "null", example: null },
+        data: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+              example: "If an account matches that email, a password reset link has been sent."
+            }
+          },
+          required: ["message"]
+        }
+      },
+      required: ["error", "data"]
+    },
+    ResetPasswordRequest: {
+      type: "object",
+      properties: {
+        token: { type: "string", example: "secure-reset-token" },
+        password: { type: "string", minLength: 6, maxLength: 20, example: "secret123" }
+      },
+      required: ["token", "password"]
+    },
+    ResetPasswordResponse: {
+      type: "object",
+      properties: {
+        error: { type: "null", example: null },
+        data: {
+          type: "object",
+          properties: {
+            message: { type: "string", example: "Password reset successful." }
+          },
+          required: ["message"]
+        }
+      },
+      required: ["error", "data"]
+    },
     LoginResponse: {
       type: "object",
       properties: {

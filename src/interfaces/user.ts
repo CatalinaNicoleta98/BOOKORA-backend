@@ -19,6 +19,9 @@ export interface User {
   // Ownership / role
   role?: string;
 
+  passwordResetTokenHash?: string;
+  passwordResetExpiresAt?: Date;
+
   // Timestamps
   createdAt?: Date;
   updatedAt?: Date;

@@ -102,6 +102,78 @@ export const paths = {
       }
     }
   },
+  "/auth/forgot-password": {
+    post: {
+      tags: ["Auth"],
+      summary: "Request a password reset email",
+      description: "Generates a secure password reset token for the matching user account and sends a reset email when mail delivery is configured. The response is always generic so account existence is never disclosed.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ForgotPasswordRequest" }
+          }
+        }
+      },
+      responses: {
+        "200": {
+          description: "Generic password reset confirmation",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ForgotPasswordResponse" }
+            }
+          }
+        },
+        "400": {
+          description: "Invalid request body",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "500": {
+          description: "Server error"
+        }
+      }
+    }
+  },
+  "/auth/reset-password": {
+    post: {
+      tags: ["Auth"],
+      summary: "Reset the user's password with a valid token",
+      description: "Validates the reset token, applies the new password using the same password rules as registration, and clears the token fields after success.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ResetPasswordRequest" }
+          }
+        }
+      },
+      responses: {
+        "200": {
+          description: "Password updated successfully",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ResetPasswordResponse" }
+            }
+          }
+        },
+        "400": {
+          description: "Invalid request body or expired reset token",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "500": {
+          description: "Server error"
+        }
+      }
+    }
+  },
   "/users/me": {
     get: {
       tags: ["Users"],

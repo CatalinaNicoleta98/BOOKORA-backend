@@ -13,6 +13,37 @@ import { connect } from "../config/db";
 import { buildHandleFields, ensureUserHandle, generateAvailableHandle, validateReservedHandle } from "../services/userHandleService";
 import { toSafeUserResponse } from "../services/userResponseService";
 import { envConfig } from "../config/env";
+import {
+    createPasswordResetToken,
+    getPasswordResetExpiryMinutes,
+    resetPasswordWithToken
+} from "../services/passwordResetService";
+import { sendPasswordResetEmail } from "../services/mailService";
+
+const FORGOT_PASSWORD_RESPONSE = {
+    error: null,
+    data: {
+        message: "If an account matches that email, a password reset link has been sent."
+    }
+} as const;
+
+function getPasswordValidationRule(): Joi.StringSchema<string> {
+    return Joi.string().min(6).max(20).required();
+}
+
+function buildPasswordResetUrl(token: string): string {
+    const frontendUrl = envConfig.mail.frontendUrl;
+
+    if (!frontendUrl) {
+        throw new Error("FRONTEND_URL is required for password reset.");
+    }
+
+    return `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function isDuplicateKeyError(error: unknown): error is { code: number; keyPattern?: Record<string, number> } {
     return typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000;
@@ -178,13 +209,87 @@ export async function loginUser(req: Request, res: Response) {
     }
 }
 
+export async function forgotPassword(req: Request, res: Response) {
+    try {
+        const { error } = validateForgotPasswordRequest(req.body);
+
+        if (error) {
+            res.status(400).json({ error: error.details[0].message });
+            return;
+        }
+
+        await connect();
+
+        const normalizedEmail = req.body.email.trim();
+        const user = await userModel.findOne({
+            email: new RegExp(`^${escapeRegex(normalizedEmail)}$`, "i")
+        });
+
+        if (!user) {
+            res.status(200).json(FORGOT_PASSWORD_RESPONSE);
+            return;
+        }
+
+        const { token } = await createPasswordResetToken(user._id.toString());
+        const resetUrl = buildPasswordResetUrl(token);
+
+        await sendPasswordResetEmail({
+            email: user.email,
+            name: user.name,
+            resetUrl,
+            expiresInMinutes: getPasswordResetExpiryMinutes()
+        });
+
+        res.status(200).json(FORGOT_PASSWORD_RESPONSE);
+    } catch (error) {
+        res.status(500).json({
+            error: "PASSWORD_RESET_REQUEST_FAILED",
+            message: error instanceof Error ? error.message : "Failed to process password reset request."
+        });
+    }
+}
+
+export async function resetPassword(req: Request, res: Response) {
+    try {
+        const { error } = validateResetPasswordRequest(req.body);
+
+        if (error) {
+            res.status(400).json({ error: error.details[0].message });
+            return;
+        }
+
+        await connect();
+
+        const resetSucceeded = await resetPasswordWithToken(req.body.token.trim(), req.body.password);
+
+        if (!resetSucceeded) {
+            res.status(400).json({
+                error: "Reset token is invalid or has expired."
+            });
+            return;
+        }
+
+        res.status(200).json({
+            error: null,
+            data: {
+                message: "Password reset successful."
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: "PASSWORD_RESET_FAILED",
+            message: error instanceof Error ? error.message : "Failed to reset password."
+        });
+    }
+}
+
 
 // Validate user registration data
 export function validateUserRegistration(data: User): ValidationResult {
     const schema = Joi.object({
         name: Joi.string().min(2).max(100).required(),
         email: Joi.string().email().min(6).max(255).required(),
-        password: Joi.string().min(6).max(20).required(),
+        password: getPasswordValidationRule(),
         handle: Joi.string()
             .trim()
             .pattern(/^[A-Za-z0-9_]{3,30}$/)
@@ -208,7 +313,24 @@ export function validateUserRegistration(data: User): ValidationResult {
 export function validateUserLogin(data: User): ValidationResult {
     const schema = Joi.object({
         email: Joi.string().email().min(6).max(255).required(),
-        password: Joi.string().min(6).max(20).required()
+        password: getPasswordValidationRule()
+    });
+
+    return schema.validate(data);
+}
+
+export function validateForgotPasswordRequest(data: { email?: string }): ValidationResult {
+    const schema = Joi.object({
+        email: Joi.string().email().min(6).max(255).required()
+    });
+
+    return schema.validate(data);
+}
+
+export function validateResetPasswordRequest(data: { token?: string; password?: string }): ValidationResult {
+    const schema = Joi.object({
+        token: Joi.string().trim().min(32).required(),
+        password: getPasswordValidationRule()
     });
 
     return schema.validate(data);
