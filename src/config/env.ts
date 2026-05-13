@@ -75,6 +75,24 @@ function parseBoolean(value: string | undefined, envName: string): boolean | und
     throw new Error(`${envName} must be true or false when provided.`);
 }
 
+function resolveSmtpSecure(port: number | undefined, value: string | undefined): boolean | undefined {
+    const explicitSecure = parseBoolean(value, "SMTP_SECURE");
+
+    if (port === 587) {
+        return false;
+    }
+
+    if (typeof explicitSecure === "boolean") {
+        return explicitSecure;
+    }
+
+    if (port === 465) {
+        return true;
+    }
+
+    return undefined;
+}
+
 function parseOptionalUrl(value: string | undefined, envName: string): string | undefined {
     if (!value?.trim()) {
         return undefined;
@@ -89,10 +107,12 @@ function parseOptionalUrl(value: string | undefined, envName: string): string | 
 }
 
 function parseMailConfig(): MailConfiguration {
+    const port = parseOptionalPort(process.env.SMTP_PORT);
+
     return {
         host: process.env.SMTP_HOST?.trim() || undefined,
-        port: parseOptionalPort(process.env.SMTP_PORT),
-        secure: parseBoolean(process.env.SMTP_SECURE, "SMTP_SECURE"),
+        port,
+        secure: resolveSmtpSecure(port, process.env.SMTP_SECURE),
         user: process.env.SMTP_USER?.trim() || undefined,
         pass: process.env.SMTP_PASS?.trim() || undefined,
         from: process.env.MAIL_FROM?.trim() || undefined,

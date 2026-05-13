@@ -124,6 +124,7 @@ export async function sendPasswordResetEmail(input: PasswordResetEmailInput): Pr
     host: envConfig.mail.host,
     port: envConfig.mail.port,
     secure: envConfig.mail.secure,
+    requireTLS: envConfig.mail.port === 587,
     auth: {
       user: envConfig.mail.user,
       pass: envConfig.mail.pass
