@@ -8,6 +8,10 @@ interface PasswordResetEmailInput {
   expiresInMinutes: number;
 }
 
+const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
+const SMTP_GREETING_TIMEOUT_MS = 10_000;
+const SMTP_SOCKET_TIMEOUT_MS = 20_000;
+
 const hasCompleteMailConfig = () => {
   const mailConfig = envConfig.mail;
 
@@ -125,6 +129,9 @@ export async function sendPasswordResetEmail(input: PasswordResetEmailInput): Pr
     port: envConfig.mail.port,
     secure: envConfig.mail.secure,
     requireTLS: envConfig.mail.port === 587,
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
     auth: {
       user: envConfig.mail.user,
       pass: envConfig.mail.pass

@@ -233,12 +233,19 @@ export async function forgotPassword(req: Request, res: Response) {
         const { token } = await createPasswordResetToken(user._id.toString());
         const resetUrl = buildPasswordResetUrl(token);
 
-        await sendPasswordResetEmail({
-            email: user.email,
-            name: user.name,
-            resetUrl,
-            expiresInMinutes: getPasswordResetExpiryMinutes()
-        });
+        try {
+            await sendPasswordResetEmail({
+                email: user.email,
+                name: user.name,
+                resetUrl,
+                expiresInMinutes: getPasswordResetExpiryMinutes()
+            });
+        } catch (error) {
+            console.error("Password reset email could not be sent.", {
+                email: user.email,
+                error: error instanceof Error ? error.message : error
+            });
+        }
 
         res.status(200).json(FORGOT_PASSWORD_RESPONSE);
     } catch (error) {
