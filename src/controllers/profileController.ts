@@ -13,6 +13,10 @@ interface ProfileUpdatePayload {
     name?: string;
 }
 
+function logProfileError(action: "fetch" | "update", error: unknown) {
+    console.error(`[profile] Failed to ${action} profile`, error);
+}
+
 // Get current authenticated user
 export async function getCurrentUser(req: AuthenticatedRequest, res: Response) {
     try {
@@ -41,7 +45,8 @@ export async function getCurrentUser(req: AuthenticatedRequest, res: Response) {
             }
         });
     } catch (error) {
-        res.status(500).send("Error fetching current user. Error: " + error);
+        logProfileError("fetch", error);
+        res.status(500).json({ error: "Failed to fetch current user" });
     }
 }
 
@@ -110,6 +115,7 @@ export async function updateUserProfile(req: AuthenticatedRequest, res: Response
         });
 
     } catch (error) {
-        res.status(500).send("Error updating user profile. Error: " + error);
+        logProfileError("update", error);
+        res.status(500).json({ error: "Failed to update user profile" });
     }
 }

@@ -67,6 +67,13 @@ const logActivityWarning = (
   });
 };
 
+const logLibraryError = (
+  action: "create" | "read" | "update" | "delete",
+  error: unknown
+) => {
+  console.error(`[library] Failed to ${action} library entry`, error);
+};
+
 // CREATE library entry
 export const createLibraryEntry = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -183,7 +190,8 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(201).json(entry);
   } catch (error) {
-    res.status(500).json({ message: "Failed to create library entry", error });
+    logLibraryError("create", error);
+    res.status(500).json({ message: "Failed to create library entry" });
   }
 };
 
@@ -200,7 +208,8 @@ export const getMyLibrary = async (req: AuthenticatedRequest, res: Response) => 
 
     res.status(200).json({ data: entries });
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch library", error });
+    logLibraryError("read", error);
+    res.status(500).json({ message: "Failed to fetch library" });
   }
 };
 
@@ -294,7 +303,8 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(200).json(entry);
   } catch (error) {
-    res.status(500).json({ message: "Failed to update entry", error });
+    logLibraryError("update", error);
+    res.status(500).json({ message: "Failed to update entry" });
   }
 };
 
@@ -316,6 +326,7 @@ export const deleteLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(200).json({ message: "Entry deleted" });
   } catch (error) {
-    res.status(500).json({ message: "Failed to delete entry", error });
+    logLibraryError("delete", error);
+    res.status(500).json({ message: "Failed to delete entry" });
   }
 };

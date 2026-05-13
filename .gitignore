@@ -75,6 +75,10 @@ web_modules/
 # dotenv environment variable files
 .env*
 
+# Runtime upload files
+uploads/profiles/*
+!uploads/profiles/.gitkeep
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

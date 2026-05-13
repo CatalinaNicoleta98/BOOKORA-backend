@@ -52,6 +52,14 @@ export const paths = {
             }
           }
         },
+        "409": {
+          description: "Duplicate email or handle",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
         "500": {
           description: "Server error"
         }
@@ -89,7 +97,15 @@ export const paths = {
           }
         },
         "400": {
-          description: "Invalid credentials or invalid request body",
+          description: "Invalid request body",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "401": {
+          description: "Invalid credentials",
           content: {
             "application/json": {
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -106,7 +122,7 @@ export const paths = {
     get: {
       tags: ["Users"],
       summary: "Get the current authenticated user",
-      security: optionalAuthSecurity,
+      security: authSecurity,
       responses: {
         "200": {
           description: "Current user profile",
@@ -183,7 +199,7 @@ export const paths = {
           example: "catalina_reads"
         }
       ],
-      security: authSecurity,
+      security: optionalAuthSecurity,
       responses: {
         "200": {
           description: "Reader profile",
