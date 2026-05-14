@@ -34,6 +34,8 @@ export async function getReaderProfileByHandle(req: AuthenticatedRequest, res: R
     const profile = await getPublicReaderProfile(handle, req.userId);
 
     if (!profile) {
+      // Intentionally return 404 for both missing and private profiles so hidden accounts
+      // are not enumerable through the public profile endpoint.
       return res.status(404).json({ error: "Reader not found" });
     }
 

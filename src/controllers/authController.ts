@@ -2,21 +2,13 @@ import {
     type Request,
     type Response,
 } from "express";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
 import Joi, { ValidationResult } from "joi";
 
 // Project imports
-import { userModel } from "../models/userModel";
 import { User } from "../interfaces/user";
-import { connect } from "../config/db";
-import { buildHandleFields, ensureUserHandle, generateAvailableHandle, validateReservedHandle } from "../services/userHandleService";
+import { validateReservedHandle } from "../services/userHandleService";
 import { toSafeUserResponse } from "../services/userResponseService";
-import { envConfig } from "../config/env";
-
-function isDuplicateKeyError(error: unknown): error is { code: number; keyPattern?: Record<string, number> } {
-    return typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000;
-}
+import { loginUserAccount, registerUserAccount } from "../services/authService";
 
 function logAuthError(context: "registerUser" | "loginUser", error: unknown) {
     console.error(`[authController] ${context} failed`, error);
@@ -33,87 +25,31 @@ export async function registerUser(req: Request, res: Response) {
             return;
         }
 
-        await connect();
+        const result = await registerUserAccount(req.body);
 
-        // Check if the email is already registered
-        const emailExist = await userModel.findOne({ email: req.body.email });
-
-        if (emailExist) {
+        if (result.kind === "duplicate_email") {
             res.status(409).json({ error: "Email is already registered" });
             return;
         }
 
-        const requestedHandle = typeof req.body.handle === "string" ? req.body.handle.trim() : undefined;
-
-        if (requestedHandle) {
-            const handleExists = await userModel.findOne({ handleLower: requestedHandle.toLowerCase() });
-
-            if (handleExists) {
-                res.status(409).json({ error: "Handle is already taken" });
-                return;
-            }
+        if (result.kind === "duplicate_handle") {
+            res.status(409).json({ error: "Handle is already taken" });
+            return;
         }
 
-        // Hash the password
-        const salt = await bcrypt.genSalt(10);
-        const passwordHashed = await bcrypt.hash(req.body.password, salt);
-
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            const handleFields = requestedHandle
-                ? buildHandleFields(requestedHandle)
-                : await generateAvailableHandle({
-                    name: req.body.name,
-                    email: req.body.email
-                });
-
-            // Create user object and save to database
-            const userObject = new userModel({
-                name: req.body.name,
-                email: req.body.email,
-                password: passwordHashed,
-                handle: handleFields.handle,
-                handleLower: handleFields.handleLower,
-                bio: req.body.bio,
-                isProfilePublic: req.body.isProfilePublic,
-                role: "user"
-            });
-
-            try {
-                const savedUser = await userObject.save();
-
-                res.status(201).json({
-                    error: null,
-                    data: {
-                        id: savedUser._id,
-                        message: "User registered successfully",
-                        user: toSafeUserResponse(savedUser)
-                    }
-                });
-                return;
-            } catch (error) {
-                if (!isDuplicateKeyError(error)) {
-                    throw error;
-                }
-
-                if (error.keyPattern?.email) {
-                    res.status(409).json({ error: "Email is already registered" });
-                    return;
-                }
-
-                if (error.keyPattern?.handleLower) {
-                    if (requestedHandle) {
-                        res.status(409).json({ error: "Handle is already taken" });
-                        return;
-                    }
-
-                    continue;
-                }
-
-                throw error;
-            }
+        if (result.kind === "handle_generation_failed") {
+            res.status(500).json({ error: "Could not generate a unique handle" });
+            return;
         }
 
-        res.status(500).json({ error: "Could not generate a unique handle" });
+        res.status(201).json({
+            error: null,
+            data: {
+                id: result.user._id,
+                message: "User registered successfully",
+                user: toSafeUserResponse(result.user)
+            }
+        });
         return;
 
     } catch (error) {
@@ -134,47 +70,21 @@ export async function loginUser(req: Request, res: Response) {
             return;
         }
 
-        await connect();
+        const result = await loginUserAccount(req.body.email, req.body.password);
 
-        // Check if user exists
-        const user = await userModel.findOne({ email: req.body.email });
-
-        if (!user) {
+        if (result.kind === "invalid_credentials") {
             res.status(401).json({ error: "Email or password is incorrect" });
             return;
         }
-
-        // Check password
-        const validPassword: boolean = await bcrypt.compare(req.body.password, user.password);
-
-        if (!validPassword) {
-            res.status(401).json({ error: "Email or password is incorrect" });
-            return;
-        }
-
-        const userWithHandle = await ensureUserHandle(user);
-        const userId: string = userWithHandle._id.toString();
-
-        // Create and assign token
-        const token: string = jwt.sign(
-            {
-                userId,
-                name: userWithHandle.name,
-                email: userWithHandle.email,
-                role: userWithHandle.role
-            },
-            envConfig.tokenSecret,
-            { expiresIn: "2h" }
-        );
 
         res.status(200)
-            .header("auth-token", token)
+            .header("auth-token", result.token)
             .json({
                 error: null,
                 data: {
-                    userId,
-                    token,
-                    user: toSafeUserResponse(userWithHandle)
+                    userId: result.userId,
+                    token: result.token,
+                    user: toSafeUserResponse(result.user)
                 }
             });
 

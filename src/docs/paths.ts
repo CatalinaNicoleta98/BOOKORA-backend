@@ -154,7 +154,7 @@ export const paths = {
       tags: ["Users"],
       summary: "Update the current user's profile",
       description: "Supports both raw image URLs and direct file uploads. If `avatar` or `cover` files are uploaded, those file paths take precedence over `avatarUrl` and `coverImageUrl` fields.",
-      security: optionalAuthSecurity,
+      security: authSecurity,
       requestBody: {
         required: false,
         content: {
@@ -188,7 +188,7 @@ export const paths = {
     get: {
       tags: ["Readers"],
       summary: "Get a public reader profile by handle",
-      description: "Returns the public profile, reading summary, recent activity, and spotlight items for a reader. Authentication is optional and only influences relationship fields such as `isFollowing` and `isOwnProfile`.",
+      description: "Returns the public profile, reading summary, recent activity, and spotlight items for a reader. Authentication is optional and only influences relationship fields such as `isFollowing` and `isOwnProfile`. For privacy protection, private profiles intentionally resolve as `404 Not Found` instead of exposing that the reader exists but is hidden.",
       parameters: [
         {
           name: "handle",
@@ -199,7 +199,7 @@ export const paths = {
           example: "catalina_reads"
         }
       ],
-      security: authSecurity,
+      security: optionalAuthSecurity,
       responses: {
         "200": {
           description: "Reader profile",
@@ -210,7 +210,7 @@ export const paths = {
           }
         },
         "404": {
-          description: "Reader not found"
+          description: "Reader not found, or the reader exists but has chosen to keep the profile private"
         },
         "500": {
           description: "Server error"
