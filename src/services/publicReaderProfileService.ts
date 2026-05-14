@@ -142,6 +142,8 @@ async function getPublicReaderByHandle(handle: string): Promise<HydratedDocument
   const userWithHandle = await ensureUserHandle(user);
 
   if (!userWithHandle.isProfilePublic) {
+    // Intentionally collapse private profiles into the same null result as missing readers.
+    // This avoids confirming whether a hidden profile exists to unauthenticated callers.
     return null;
   }
 
