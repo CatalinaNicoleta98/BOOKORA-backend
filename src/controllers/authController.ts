@@ -18,6 +18,10 @@ function isDuplicateKeyError(error: unknown): error is { code: number; keyPatter
     return typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000;
 }
 
+function logAuthError(context: "registerUser" | "loginUser", error: unknown) {
+    console.error(`[authController] ${context} failed`, error);
+}
+
 // Register a new user
 export async function registerUser(req: Request, res: Response) {
     try {
@@ -35,7 +39,7 @@ export async function registerUser(req: Request, res: Response) {
         const emailExist = await userModel.findOne({ email: req.body.email });
 
         if (emailExist) {
-            res.status(400).json({ error: "Email is already registered" });
+            res.status(409).json({ error: "Email is already registered" });
             return;
         }
 
@@ -45,7 +49,7 @@ export async function registerUser(req: Request, res: Response) {
             const handleExists = await userModel.findOne({ handleLower: requestedHandle.toLowerCase() });
 
             if (handleExists) {
-                res.status(400).json({ error: "Handle is already taken" });
+                res.status(409).json({ error: "Handle is already taken" });
                 return;
             }
         }
@@ -92,13 +96,13 @@ export async function registerUser(req: Request, res: Response) {
                 }
 
                 if (error.keyPattern?.email) {
-                    res.status(400).json({ error: "Email is already registered" });
+                    res.status(409).json({ error: "Email is already registered" });
                     return;
                 }
 
                 if (error.keyPattern?.handleLower) {
                     if (requestedHandle) {
-                        res.status(400).json({ error: "Handle is already taken" });
+                        res.status(409).json({ error: "Handle is already taken" });
                         return;
                     }
 
@@ -113,7 +117,8 @@ export async function registerUser(req: Request, res: Response) {
         return;
 
     } catch (error) {
-        res.status(500).send("Error registering user. Error: " + error);
+        logAuthError("registerUser", error);
+        res.status(500).json({ error: "Error registering user." });
     }
 }
 
@@ -135,7 +140,7 @@ export async function loginUser(req: Request, res: Response) {
         const user = await userModel.findOne({ email: req.body.email });
 
         if (!user) {
-            res.status(400).json({ error: "Email or password is incorrect" });
+            res.status(401).json({ error: "Email or password is incorrect" });
             return;
         }
 
@@ -143,7 +148,7 @@ export async function loginUser(req: Request, res: Response) {
         const validPassword: boolean = await bcrypt.compare(req.body.password, user.password);
 
         if (!validPassword) {
-            res.status(400).json({ error: "Email or password is incorrect" });
+            res.status(401).json({ error: "Email or password is incorrect" });
             return;
         }
 
@@ -174,7 +179,8 @@ export async function loginUser(req: Request, res: Response) {
             });
 
     } catch (error) {
-        res.status(500).send("Error logging in user. Error: " + error);
+        logAuthError("loginUser", error);
+        res.status(500).json({ error: "Error logging in user." });
     }
 }
 
