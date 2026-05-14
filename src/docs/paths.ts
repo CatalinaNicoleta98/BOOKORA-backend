@@ -154,7 +154,7 @@ export const paths = {
       tags: ["Users"],
       summary: "Update the current user's profile",
       description: "Supports both raw image URLs and direct file uploads. If `avatar` or `cover` files are uploaded, those file paths take precedence over `avatarUrl` and `coverImageUrl` fields.",
-      security: optionalAuthSecurity,
+      security: authSecurity,
       requestBody: {
         required: false,
         content: {
