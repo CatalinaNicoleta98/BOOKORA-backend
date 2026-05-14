@@ -67,6 +67,23 @@ const logActivityWarning = (
   });
 };
 
+const logLibraryEntryError = (
+  context: "createLibraryEntry" | "getMyLibrary" | "updateLibraryEntry" | "deleteLibraryEntry",
+  error: unknown
+) => {
+  console.error(`[libraryEntryController] ${context} failed`, error);
+};
+
+const getValidatedLibraryEntryId = (id: string | string[] | undefined) => {
+  const normalizedId = typeof id === "string" ? id : Array.isArray(id) ? id[0] : undefined;
+
+  if (!normalizedId || !mongoose.isValidObjectId(normalizedId)) {
+    return null;
+  }
+
+  return normalizedId;
+};
+
 // CREATE library entry
 export const createLibraryEntry = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -183,7 +200,8 @@ export const createLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(201).json(entry);
   } catch (error) {
-    res.status(500).json({ message: "Failed to create library entry", error });
+    logLibraryEntryError("createLibraryEntry", error);
+    res.status(500).json({ message: "Failed to create library entry" });
   }
 };
 
@@ -200,7 +218,8 @@ export const getMyLibrary = async (req: AuthenticatedRequest, res: Response) => 
 
     res.status(200).json({ data: entries });
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch library", error });
+    logLibraryEntryError("getMyLibrary", error);
+    res.status(500).json({ message: "Failed to fetch library" });
   }
 };
 
@@ -212,6 +231,12 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const validatedEntryId = getValidatedLibraryEntryId(id);
+
+    if (!validatedEntryId) {
+      return res.status(400).json({ message: "Invalid library entry id" });
     }
 
     const {
@@ -241,7 +266,7 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ message: sanitizedNotes.message });
     }
 
-    const existingEntry = await LibraryEntryModel.findOne({ _id: id, userId });
+    const existingEntry = await LibraryEntryModel.findOne({ _id: validatedEntryId, userId });
 
     if (!existingEntry) {
       return res.status(404).json({ message: "Library entry not found" });
@@ -273,7 +298,7 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
     if (progressUnit !== undefined) update.progressUnit = progressUnit;
 
     const entry = await LibraryEntryModel.findOneAndUpdate(
-      { _id: id, userId },
+      { _id: validatedEntryId, userId },
       update,
       { new: true }
     );
@@ -294,7 +319,8 @@ export const updateLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(200).json(entry);
   } catch (error) {
-    res.status(500).json({ message: "Failed to update entry", error });
+    logLibraryEntryError("updateLibraryEntry", error);
+    res.status(500).json({ message: "Failed to update entry" });
   }
 };
 
@@ -308,7 +334,13 @@ export const deleteLibraryEntry = async (req: AuthenticatedRequest, res: Respons
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const entry = await LibraryEntryModel.findOneAndDelete({ _id: id, userId });
+    const validatedEntryId = getValidatedLibraryEntryId(id);
+
+    if (!validatedEntryId) {
+      return res.status(400).json({ message: "Invalid library entry id" });
+    }
+
+    const entry = await LibraryEntryModel.findOneAndDelete({ _id: validatedEntryId, userId });
 
     if (!entry) {
       return res.status(404).json({ message: "Library entry not found" });
@@ -316,6 +348,7 @@ export const deleteLibraryEntry = async (req: AuthenticatedRequest, res: Respons
 
     res.status(200).json({ message: "Entry deleted" });
   } catch (error) {
-    res.status(500).json({ message: "Failed to delete entry", error });
+    logLibraryEntryError("deleteLibraryEntry", error);
+    res.status(500).json({ message: "Failed to delete entry" });
   }
 };

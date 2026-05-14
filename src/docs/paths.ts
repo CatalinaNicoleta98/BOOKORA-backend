@@ -45,7 +45,15 @@ export const paths = {
           }
         },
         "400": {
-          description: "Validation error or duplicate email/handle",
+          description: "Validation error",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "409": {
+          description: "Duplicate email or handle",
           content: {
             "application/json": {
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -89,7 +97,15 @@ export const paths = {
           }
         },
         "400": {
-          description: "Invalid credentials or invalid request body",
+          description: "Invalid request body",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            }
+          }
+        },
+        "401": {
+          description: "Invalid credentials",
           content: {
             "application/json": {
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -106,7 +122,7 @@ export const paths = {
     get: {
       tags: ["Users"],
       summary: "Get the current authenticated user",
-      security: optionalAuthSecurity,
+      security: authSecurity,
       responses: {
         "200": {
           description: "Current user profile",
@@ -138,7 +154,7 @@ export const paths = {
       tags: ["Users"],
       summary: "Update the current user's profile",
       description: "Supports both raw image URLs and direct file uploads. If `avatar` or `cover` files are uploaded, those file paths take precedence over `avatarUrl` and `coverImageUrl` fields.",
-      security: authSecurity,
+      security: optionalAuthSecurity,
       requestBody: {
         required: false,
         content: {
